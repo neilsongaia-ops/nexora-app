@@ -94,8 +94,9 @@ export async function historico(l) {
   const s = openSheet({ title: 'Histórico', content: skelRows(3) });
   try {
     const hs = await load('lancamentos.historico', { id: l.id });
-    const NOMES = { descricao: 'Descrição', categoria_id: 'Categoria', data_evento: 'Data', valor_bruto: 'Valor', status: 'Situação', motivo: 'Motivo' };
-    const fmt = (k, v) => (v == null || v === '' ? '—' : k.endsWith('categoria_id') || k.startsWith('item:') ? catNome(v) || '—' : k === 'data_evento' ? dmy(v) : k === 'valor_bruto' ? money(v) : String(v));
+    const NOMES = { descricao: 'Descrição', categoria_id: 'Categoria', data_evento: 'Data', valor_bruto: 'Valor', valor_total: 'Total', descontos: 'Descontos', acrescimos: 'Acréscimos', encargos: 'Encargos', status: 'Situação', motivo: 'Motivo', recurso_id: 'Conta' };
+    const SITUACAO = { PLANEJADO: 'Planejado', PENDENTE: 'Pendente', EFETIVADO: 'Efetivado', CANCELADO: 'Cancelado', ESTORNADO: 'Estornado' }, DINHEIRO = ['valor_bruto', 'valor_total', 'descontos', 'acrescimos', 'encargos'];
+    const fmt = (k, v) => (v == null || v === '' ? '—' : k.endsWith('categoria_id') || k.startsWith('item:') ? catNome(v) || '—' : k === 'data_evento' ? dmy(v) : DINHEIRO.includes(k) ? money(v) : k === 'status' ? SITUACAO[v] || String(v) : k === 'recurso_id' ? recNome(v) : String(v));
     s.setContent(hs.length ? h('ol', { class: 'timeline' }, hs.map((a) => h('li', { class: 'tl-item' }, h('span', { class: 'tl-dot', 'aria-hidden': 'true' }),
       h('div', { class: 'tl-body' }, h('div', { class: 'tl-title' }, { criado: 'Criado', atualizado: 'Alterado', efetivado: 'Efetivado', cancelado: 'Cancelado', estornado: 'Estornado' }[a.acao] || a.acao, ' por ', h('strong', {}, a.quem || '—')),
         h('div', { class: 'tl-when' }, instant(a.quando)),
@@ -135,7 +136,7 @@ export async function openLancDetail(id) {
       title: recNome(m.recurso_id), sub: m.data_efetivacao ? 'Efetivada em ' + dmy(m.data_efetivacao) : 'Ainda não conta no saldo',
       trail: h('span', { class: 'num tone-' + (m.natureza === 'CREDITO' ? 'in' : 'out') }, (m.natureza === 'CREDITO' ? '+' : '\u2212') + money(m.valor)),
     })))];
-    const exec = d.execucoes && d.execucoes.length ? [sectionHead('Planejamentos'), h('div', { class: 'list' }, d.execucoes.map((x) => row({ lead: h('span', { class: 'tipo-ico' }, icon('target')), title: x.nome, sub: catNome(x.categoria_id), trail: h('span', { class: 'num' }, money(x.valor)) })))] : null;
+    const exec = d.execucoes && d.execucoes.length ? [sectionHead('Planejamentos'), h('div', { class: 'list' }, Object.values(d.execucoes.reduce((g, x) => { const e = g[x.planejamento_id || x.nome] ||= { nome: x.nome, valor: 0, n: 0 }; e.valor += x.valor; e.n++; return g; }, {})).map((x) => row({ lead: h('span', { class: 'tipo-ico' }, icon('target')), title: x.nome, sub: x.n > 1 ? `${x.n} itens` : null, trail: h('span', { class: 'num' }, money(Math.round(x.valor * 100) / 100)) })))] : null;
     s.setTitle(TIPO[d.tipo].label);
     s.setContent([head, info, brk, itens, parcelas, mov, exec]);
     const acts = [];
