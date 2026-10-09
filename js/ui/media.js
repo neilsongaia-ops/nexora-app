@@ -4,6 +4,45 @@ import { icon } from '../icons.js';
 import { openSheet } from './sheet.js';
 import { btn } from './components.js';
 
+// Detector nativo quando existe; senão ZXing (iOS/Safari, Firefox), carregado sob demanda
+let zxingP = null;
+function loadZxing() {
+  const cfg = window.NEXORA_CONFIG || {};
+  zxingP ||= new Promise((ok, fail) => {
+    const sc = document.createElement('script');
+    sc.src = cfg.zxing; sc.crossOrigin = 'anonymous';
+    sc.onload = () => ok(window.ZXing);
+    sc.onerror = () => { zxingP = null; fail(new Error('zxing')); };
+    document.head.append(sc);
+  });
+  return zxingP;
+}
+const ZX_FORMATS = { ean_13: 'EAN_13', ean_8: 'EAN_8', upc_a: 'UPC_A', upc_e: 'UPC_E', code_128: 'CODE_128', qr_code: 'QR_CODE' };
+async function makeDetector(formats) {
+  if ('BarcodeDetector' in window) {
+    const supported = await window.BarcodeDetector.getSupportedFormats();
+    const fm = formats.filter((f) => supported.includes(f));
+    if (fm.length) {
+      const det = new window.BarcodeDetector({ formats: fm });
+      return async (video) => { const c = await det.detect(video); return c[0] ? c[0].rawValue : null; };
+    }
+  }
+  const Z = await loadZxing();
+  const hints = new Map();
+  hints.set(Z.DecodeHintType.POSSIBLE_FORMATS, formats.map((f) => Z.BarcodeFormat[ZX_FORMATS[f]]).filter((x) => x !== undefined));
+  hints.set(Z.DecodeHintType.TRY_HARDER, true);
+  const reader = new Z.MultiFormatReader();
+  reader.setHints(hints);
+  const canvas = document.createElement('canvas'), cx = canvas.getContext('2d', { willReadFrequently: true });
+  return async (video) => {
+    canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+    if (!canvas.width) return null;
+    cx.drawImage(video, 0, 0);
+    try { return reader.decode(new Z.BinaryBitmap(new Z.HybridBinarizer(new Z.HTMLCanvasElementLuminanceSource(canvas)))).getText(); }
+    catch { return null; }
+  };
+}
+
 export function scanCode({ title = 'Ler código', formats = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128'], manualLabel = 'Código de barras', inputmode = 'numeric' } = {}) {
   return new Promise((res) => {
     let result, stream = null, timer = null;
@@ -20,10 +59,9 @@ export function scanCode({ title = 'Ler código', formats = ['ean_13', 'ean_8', 
       onClose: () => { clearInterval(timer); stream && stream.getTracks().forEach((t) => t.stop()); res(result); },
     });
     (async () => {
-      if (!('BarcodeDetector' in window) || !navigator.mediaDevices) { stage.classList.add('is-off'); status.textContent = 'Leitura pela câmera indisponível neste navegador. Digite o código.'; input.focus(); return; }
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { stage.classList.add('is-off'); status.textContent = 'Câmera indisponível neste navegador. Digite o código.'; input.focus(); return; }
       try {
-        const supported = await window.BarcodeDetector.getSupportedFormats();
-        const det = new window.BarcodeDetector({ formats: formats.filter((f) => supported.includes(f)) });
+        const detect = await makeDetector(formats);
         stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
         if (s.closing) { stream.getTracks().forEach((t) => t.stop()); return; }
         video.srcObject = stream;
@@ -31,7 +69,7 @@ export function scanCode({ title = 'Ler código', formats = ['ean_13', 'ean_8', 
         stage.classList.add('is-live');
         timer = setInterval(async () => {
           if (video.readyState < 2) return;
-          try { const c = await det.detect(video); if (c[0]) { clearInterval(timer); done(c[0].rawValue); } } catch { /* quadro inválido */ }
+          try { const v = await detect(video); if (v) { clearInterval(timer); done(v); } } catch { /* quadro inválido */ }
         }, 220);
       } catch {
         stage.classList.add('is-off');

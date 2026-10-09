@@ -6,6 +6,7 @@ window.NEXORA_CONFIG = {
   latenciaDemo: [300, 1100],        // ms simulados no modo demonstração (?demo=1&lento=1 usa 1–6 s)
   imagemLado: 200,                  // px do lado maior da miniatura de produto enviada
   imagemMaxChars: 30000,            // limite da API para data URL
+  zxing: 'https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js',   // leitor de código de barras para navegadores sem BarcodeDetector (iOS)
   pdfjs: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
   pdfjsWorker: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js',
 };

@@ -91,7 +91,7 @@ export async function lerProduto(ctx, { onProduct } = {}) {
     t();
     if (r.origem === 'ESPACO') { store.produtos.set(r.produto.id, r.produto); return onProduct ? onProduct(r.produto) : ctx.go('/compras/produto/' + r.produto.id); }
     if (!can('editor')) { toast('Produto não cadastrado neste espaço.', { ico: 'tag' }); return; }
-    produtoForm({ initial: r.origem === 'CATALOGO' ? { ...r.sugestao, gtin: code } : { gtin: code }, fromCatalog: r.origem === 'CATALOGO', onSaved: (p) => (onProduct ? onProduct(p) : ctx.go('/compras/produto/' + p.id)) });
+    produtoForm({ initial: r.sugestao ? { ...r.sugestao, gtin: code } : { gtin: code }, fromCatalog: !!r.sugestao, onSaved: (p) => (onProduct ? onProduct(p) : ctx.go('/compras/produto/' + p.id)) });
   } catch (e) { t(); toast(e.message, { tone: 'danger' }); }
 }
 
