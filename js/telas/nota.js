@@ -50,8 +50,8 @@ export default async function nota(ctx) {
     const pname = (id) => (prods.find((p) => p.id === id) || {}).nome;
     const info = res.chave_info;
     const warns = [];
-    if (res.duplicada) warns.push(h('div', { class: 'warn-item is-danger', role: 'alert' }, icon('alert'), h('span', {}, 'Esta nota já foi importada.')));
-    res.avisos.forEach((a) => warns.push(h('div', { class: 'warn-item' }, icon('alert'), h('span', {}, a))));
+    if (res.duplicada) warns.push(h('div', { class: 'warn-item is-danger', role: 'alert' }, icon('alert'), h('span', {}, 'Não é possível importar: esta nota já foi importada' + (res.importada_em ? ' em ' + dmy(res.importada_em) : '') + '.')));
+    res.avisos.filter((a) => !(res.duplicada && /já foi importada/.test(a))).forEach((a) => warns.push(h('div', { class: 'warn-item' }, icon('alert'), h('span', {}, a))));
     const soma = res.itens.reduce((s, i) => s + i.total, 0), desc = Math.max(0, soma - res.total);
     const itens = h('div', { class: 'list' }, res.itens.map((it, k) => {
       const m = map[k];

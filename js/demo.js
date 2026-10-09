@@ -917,7 +917,7 @@ const R = {
   'comparacao.lista': (p, { S }) => comparar(S, p),
   'nfce.interpretar': ({ entrada, texto }, { S }) => interpretar(S, entrada, texto),
   'nfce.importar': (p, { S }) => {
-    if (p.chave && S.notas.some((n) => n.chave === p.chave)) fail('Esta nota já foi importada.');
+    if (p.chave && S.notas.some((n) => n.chave === p.chave)) fail('Não é possível importar: esta nota já foi importada.');
     if (!p.itens || !p.itens.length) fail('A nota não tem itens.');
     let loja = p.loja_id && lojaOf(S, p.loja_id);
     if (!loja && p.loja) { const c = (p.loja.cnpj || '').replace(/\D/g, ''); loja = (c && S.lojas.find((l) => l.cnpj === c)) || R['lojas.salvar']({ nome: p.loja.nome || 'Loja', cnpj: c, cidade: p.loja.cidade, uf: p.loja.uf }, { S }); }
