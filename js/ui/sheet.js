@@ -48,7 +48,7 @@ export function openSheet({ title, content, footer, size = 'auto', snap = false,
     id, el: panel, body, foot, offset: 0, closing: false,
     _closed: new Promise((r) => { resolveClosed = r; }),
     setTitle(t) { titleEl.textContent = t; },
-    setContent(c) { body.replaceChildren(...[].concat(c).filter(Boolean)); },
+    setContent(c) { body.replaceChildren(...[c].flat(Infinity).filter(Boolean)); },
     setFooter(f) { foot.replaceChildren(...[].concat(f || []).filter(Boolean)); foot.hidden = !f; },
     close() {
       if (s.closing) return s._closed;
