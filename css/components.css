@@ -270,6 +270,7 @@ textarea.input { padding: var(--s3) var(--s4); min-height: 120px; resize: vertic
 .sheet-head.is-bare .sheet-headrow { min-height: 0; }
 .sheet-title { flex: 1; font-size: var(--t-lg); font-weight: var(--w-b); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-left: var(--s1); }
 .sheet-x { margin-right: calc(var(--s2) * -1); }
+.sheet-body > * { flex-shrink: 0; }
 .sheet-body { flex: 1; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; padding: var(--s2) var(--s4) var(--s5); display: flex; flex-direction: column; gap: var(--s4); }
 .sheet-foot { flex: none; padding: var(--s3) var(--s4) calc(var(--s3) + var(--safe-b)); border-top: var(--bw) solid var(--line); background: var(--surface); }
 .sheet-foot:empty { display: none; }
