@@ -8,7 +8,7 @@ import { toast } from '../ui/toast.js';
 import { chooseImage, imageToThumb } from '../ui/media.js';
 import { card, row, badge, empty, errorState, skelRows, skelCards, sectionHead, btn, iconBtn, thumb, forgetImg, moneyField, pickField, dateField, formError, tip } from '../ui/components.js';
 import { line } from '../ui/charts.js';
-import { produtoForm, denunciar } from './compras.js';
+import { produtoForm, denunciar, lojaForm } from './compras.js';
 
 export default async function produto(ctx, id) {
   const { view, setTitle, go } = ctx;
@@ -98,9 +98,11 @@ export async function registrar(p) {
   const err = formError(), rid = uuid();
   let preco = p.ultimo_preco || 0, loja = null, data = HOJE;
   const lojas = await load('lojas.listar', {}).catch(() => []);
+  let lf;
   const mf = moneyField('Preço', { value: preco, big: true, autofocus: true, onChange: (v) => { preco = v; mf.setError(''); } });
   mf.input.dataset.forceFocus = '1';
-  const lf = pickField('Loja', { value: loja, items: lojas.map((l) => ({ value: l.id, label: l.nome, icon: 'store' })), placeholder: 'Escolher loja', onChange: (v) => { loja = v; lf.setError(''); } });
+  lf = pickField('Loja', { value: loja, items: () => lojas.map((l) => ({ value: l.id, label: l.nome, icon: 'store' })), placeholder: 'Escolher loja', onChange: (v) => { loja = v; lf.setError(''); },
+    action: can('editor') ? { label: 'Nova loja', icon: 'plus', onClick: () => lojaForm(null, (r) => { lojas.push(r); loja = r.id; lf.set(r.id); lf.setError(''); }) } : null });
   const b = btn('Registrar', { size: 'lg', full: true });
   b.onclick = async () => {
     let bad = false;

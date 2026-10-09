@@ -7,7 +7,7 @@ import { openSheet, openMenu, pick, confirmSheet } from '../ui/sheet.js';
 import { toast, undoable } from '../ui/toast.js';
 import { swipeable } from '../ui/gestures.js';
 import { row, thumb, badge, empty, errorState, skelRows, btn, iconBtn, stepper, pickField, formError, sectionHead, chip } from '../ui/components.js';
-import { lerProduto } from './compras.js';
+import { lerProduto, lojaForm } from './compras.js';
 import { recursoItems } from './lancForm.js';
 
 const fmtQ = (q, u) => (u === 'KG' || u === 'L' ? num(q, 3) + ' ' + u.toLowerCase() : num(q, 2) + '×');
@@ -100,7 +100,7 @@ export default async function lista(ctx, id) {
     const abertas = await load('sessoes.listar', { lista_id: id, status: 'ABERTA' }).catch(() => []);
     if (abertas.length) { go('/compras/sessao/' + abertas[0].id); return; }
     const err = formError(), rid = uuid();
-    let lj = loja_id, rec = null;
+    let lj = loja_id, rec = null, lf;
     const b = btn('Começar', { size: 'lg', full: true, icon: 'cart' });
     b.onclick = async () => {
       if (!lj) { err.show('Escolha a loja.'); return; }
@@ -109,7 +109,8 @@ export default async function lista(ctx, id) {
       catch (e) { err.show(e.message); } finally { b.disabled = false; b.removeAttribute('aria-busy'); }
     };
     const s = openSheet({ title: 'Ir às compras', footer: b, content: [err,
-      pickField('Loja', { value: lj, items: lojas.map((l) => ({ value: l.id, label: l.nome, icon: 'store', sub: l.cidade || null })), placeholder: 'Escolher loja', onChange: (v) => { lj = v; } }),
+      (lf = pickField('Loja', { value: lj, items: () => lojas.map((l) => ({ value: l.id, label: l.nome, icon: 'store', sub: l.cidade || null })), placeholder: 'Escolher loja', onChange: (v) => { lj = v; },
+        action: can('editor') ? { label: 'Nova loja', icon: 'plus', onClick: () => lojaForm(null, (r) => { lojas.push(r); lj = r.id; lf.set(r.id); }) } : null })),
       pickField('Pagar com', { value: rec, items: () => recursoItems(), placeholder: 'Decidir no final', onChange: (v) => { rec = v; } })] });
   }
   reload();
