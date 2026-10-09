@@ -29,7 +29,7 @@ export default async function inicio(ctx) {
   const hero = h('section', { class: 'hero', 'aria-label': 'Quanto tenho' }, skel('skel-line w-30 sm'), skel('skel-line w-60 xl'), skel('skel-line w-40 sm'));
   const tiles = h('div', { class: 'tiles' }, Array.from({ length: 4 }, () => h('div', { class: 'tile' }, skel('skel-line w-50 sm'), skel('skel-line w-70 lg'))));
   const onde = h('div', { class: 'hscroll' }, Array.from({ length: 3 }, () => h('div', { class: 'acct' }, skel('skel-line w-60 sm'), skel('skel-line w-80 lg'))));
-  const gastoBody = h('div', { class: 'donut-wrap' }, skel('skel-circle xl'), skelRows(4));
+  const gastoBody = h('div', {}, h('div', { class: 'donut-wrap' }, skel('skel-circle xl'), skelRows(4)));
   const serieBody = h('div', {}, skel('skel-block'));
   const planBody = h('div', {}, skelRows(3));
   const fluxBody = h('div', {}, skelRows(4));
