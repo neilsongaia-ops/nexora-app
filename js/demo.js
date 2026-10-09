@@ -244,6 +244,14 @@ function pagarFatura(S, f, contaId, valor, data, seed) {
 }
 
 // ---------- produtos e preços ----------
+// embalagem = número na unidade do produto (como no backend): "500 g" → { unidade: 'G', tam: 500 }; "1 L" → { 'ML', 1000 }; produto vendido por KG/L mantém a unidade
+const tamNum = (v) => { const n = Number(String(v ?? '').replace(',', '.')); return n > 0 ? n : null; };
+function tamUn(un, txt) {
+  if (un === 'KG' || un === 'L') return { unidade: un, tam: 1 };
+  const m = /^\s*([\d.,]+)\s*(kg|g|l|ml|un)\s*$/i.exec(String(txt || '')); if (!m) return { unidade: un, tam: 1 };
+  const n = tamNum(m[1]), u = m[2].toLowerCase();
+  return u === 'kg' ? { unidade: 'G', tam: n * 1000 } : u === 'g' ? { unidade: 'G', tam: n } : u === 'l' ? { unidade: 'ML', tam: n * 1000 } : u === 'ml' ? { unidade: 'ML', tam: n } : { unidade: 'UN', tam: n };
+}
 const PRODUTOS = [
   ['Arroz tipo 1', 'Bom Grão', '789100010001', 'UN', '5 kg', 26.9, 'c_merc'], ['Feijão carioca', 'Bom Grão', '789100010002', 'UN', '1 kg', 8.49, 'c_merc'],
   ['Café torrado e moído', 'Serra Azul', '789100010003', 'UN', '500 g', 19.9, 'c_merc'], ['Leite integral', 'Vale Doce', '789100010004', 'UN', '1 L', 5.29, 'c_merc'],
@@ -266,7 +274,7 @@ const LOJAS = [
 const PRODUCE = ['Banana prata', 'Tomate', 'Ovos brancos', 'Queijo muçarela', 'Picanha bovina'];
 
 function seedCatalogo() {
-  DB.catalogo = [{ gtin: gtin('789100010030'), nome: 'Biscoito recheado de chocolate', marca: 'Doce Lar', unidade: 'UN', tam_embalagem: '130 g' }, { gtin: gtin('789100010031'), nome: 'Achocolatado em pó', marca: 'Vale Doce', unidade: 'UN', tam_embalagem: '400 g' }];
+  DB.catalogo = [{ gtin: gtin('789100010030'), nome: 'Biscoito recheado de chocolate', marca: 'Doce Lar', ...tamUn('UN', '130 g') ? { unidade: tamUn('UN', '130 g').unidade, tam_embalagem: tamUn('UN', '130 g').tam } : {} }, { gtin: gtin('789100010031'), nome: 'Achocolatado em pó', marca: 'Vale Doce', unidade: tamUn('UN', '400 g').unidade, tam_embalagem: tamUn('UN', '400 g').tam }];
   DB.lojasGlobais = [{ id: 'l_gl1', nome: 'Supermercado Litorâneo', cnpj: '55666777000145', cidade: 'Belém', uf: 'PA', latitude: -1.4402, longitude: -48.4721, global: true }];
   DB.obs = []; DB.imagens = {};
   const r = rng(7);
@@ -285,7 +293,7 @@ function seedCatalogo() {
 
 function seedCompras(S, r) {
   LOJAS.forEach(([id, nome, cnpj, lat, lng]) => S.lojas.push({ id, nome, cnpj: cnpj || null, cidade: 'Belém', uf: 'PA', latitude: lat, longitude: lng, status: 'ATIVA', versao: 1 }));
-  PRODUTOS.forEach(([nome, marca, g, un, tam, base, cat], i) => S.produtos.push({ id: 'p' + (i + 1), nome, marca: marca || null, gtin: g ? gtin(g) : null, unidade: un, tam_embalagem: tam || null, categoria_id: cat, status: 'ATIVO', versao: 1, global_id: g ? 'g' + (i + 1) : null, _base: base }));
+  PRODUTOS.forEach(([nome, marca, g, un0, tam0, base, cat], i) => { const { unidade: un, tam } = tamUn(un0, tam0); S.produtos.push({ id: 'p' + (i + 1), nome, marca: marca || null, gtin: g ? gtin(g) : null, unidade: un, tam_embalagem: tam, categoria_id: cat, status: 'ATIVO', versao: 1, global_id: g ? 'g' + (i + 1) : null, _base: base }); });
   for (const p of S.produtos) {
     const lojas = PRODUCE.includes(p.nome) ? ['l_fp', 'l_hs', 'l_bp'] : ['l_bp', 'l_mb', 'l_ap'];
     lojas.forEach((lid, j) => {
@@ -746,13 +754,14 @@ const R = {
     if (p.id) {
       const x = prodOf(S, p.id) || fail('Produto não encontrado.'); checkVer(x, p.versao);
       if (p.gtin && x.gtin && p.gtin !== x.gtin) fail('O código de barras não pode ser trocado.');
-      ['nome', 'marca', 'unidade', 'tam_embalagem', 'categoria_id', 'status'].forEach((k) => { if (p[k] !== undefined) x[k] = p[k]; });
+      ['nome', 'marca', 'unidade', 'categoria_id', 'status'].forEach((k) => { if (p[k] !== undefined) x[k] = p[k]; });
+      if (p.tam_embalagem !== undefined) { if (p.tam_embalagem !== '' && p.tam_embalagem !== null && tamNum(p.tam_embalagem) === null) fail('Informe só o número do tamanho da embalagem (ex.: 500); a unidade é a escolhida no produto.'); x.tam_embalagem = tamNum(p.tam_embalagem) || 1; }
       if (p.gtin && !x.gtin) x.gtin = p.gtin;
       x.versao++; return viewProd(S, x);
     }
     if (!String(p.nome || '').trim()) fail('Dê um nome ao produto.');
     if (p.gtin && S.produtos.some((x) => x.gtin === p.gtin)) fail('Já existe um produto com este código de barras.');
-    const x = { id: nid('p'), nome: p.nome.trim(), marca: p.marca || null, gtin: p.gtin || null, unidade: p.unidade || 'UN', tam_embalagem: p.tam_embalagem || null, categoria_id: p.categoria_id || null, status: 'ATIVO', versao: 1, global_id: p.gtin ? nid('g') : null };
+    const x = { id: nid('p'), nome: p.nome.trim(), marca: p.marca || null, gtin: p.gtin || null, unidade: p.unidade || 'UN', tam_embalagem: tamNum(p.tam_embalagem) || 1, categoria_id: p.categoria_id || null, status: 'ATIVO', versao: 1, global_id: p.gtin ? nid('g') : null };
     S.produtos.push(x); return viewProd(S, x);
   },
   'produtos.porGtin': ({ gtin: g }, { S }) => {

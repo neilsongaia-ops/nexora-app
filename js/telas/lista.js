@@ -1,5 +1,5 @@
 // Lista de compras: itens, quantidade, estimativa por loja, adicionar por busca/código, comparar, ir às compras
-import { h, money, uuid, emit, debounce, num } from '../util.js';
+import { h, money, uuid, emit, debounce, num, embalagem } from '../util.js';
 import { icon } from '../icons.js';
 import { call, load } from '../api.js';
 import { store, can, recursosAtivos } from '../store.js';
@@ -87,7 +87,7 @@ export default async function lista(ctx, id) {
       try {
         const r = await load('produtos.listar', { texto: t, limite: 6 });
         r.itens.forEach((p) => store.produtos.set(p.id, p));
-        sug.replaceChildren(...r.itens.map((p) => row({ lead: thumb(p), title: p.nome, sub: [p.marca, p.tam_embalagem].filter(Boolean).join(' · '), onClick: () => add(p) })),
+        sug.replaceChildren(...r.itens.map((p) => row({ lead: thumb(p), title: p.nome, sub: [p.marca, embalagem(p)].filter(Boolean).join(' · '), onClick: () => add(p) })),
           row({ lead: h('span', { class: 'tipo-ico' }, icon('plus')), title: 'Adicionar “' + t + '”', sub: 'sem produto cadastrado', onClick: () => add({ descricao: t }) }));
         sug.hidden = false;
       } catch { sug.hidden = true; }

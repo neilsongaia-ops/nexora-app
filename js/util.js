@@ -131,3 +131,10 @@ export function draft(key) {
 const subs = {};
 export const on = (ev, fn) => { (subs[ev] ||= new Set()).add(fn); return () => subs[ev].delete(fn); };
 export const emit = (ev, d) => (subs[ev] || []).forEach((f) => f(d));
+
+/** "500 g", "12 un", "1 L": tamanho da embalagem (número) na unidade do produto; vazio quando é só "1 unidade". */
+export const embalagem = (p) => {
+  const t = Number(p && p.tam_embalagem), un = String((p && p.unidade) || 'UN');
+  if (!t || (t === 1 && un === 'UN')) return '';
+  return String(t).replace('.', ',') + ' ' + (un === 'L' ? 'L' : un.toLowerCase());
+};

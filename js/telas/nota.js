@@ -1,5 +1,5 @@
 // Nota fiscal (NFC-e): QR/chave + texto colado ou PDF (lido no navegador) → conferir itens e produtos → importar
-import { h, money, dmy, uuid, emit, num } from '../util.js';
+import { h, money, dmy, uuid, emit, num, embalagem } from '../util.js';
 import { icon } from '../icons.js';
 import { DEMO, call } from '../api.js';
 import { store, can, recursosAtivos } from '../store.js';
@@ -60,7 +60,7 @@ export default async function nota(ctx) {
         badges: [m.produto_id ? h('span', { class: 'match is-ok' }, icon('check'), pname(m.produto_id) || 'Produto', it.motivo_sugestao === 'codigo' && m.produto_id === it.produto_sugerido_id ? ' · pelo código' : '') : h('span', { class: 'match is-new' }, icon('plus'), 'Novo produto')],
         trail: h('span', { class: 'num' }, money(it.total)),
         onClick: async () => {
-          const v = await pick({ title: it.descricao, value: m.produto_id || '__novo', items: [{ value: '__novo', label: 'Criar novo produto', sub: it.descricao, icon: 'plus' }, ...prods.map((p) => ({ value: p.id, label: p.nome, sub: [p.marca, p.tam_embalagem].filter(Boolean).join(' · '), icon: 'tag' }))] });
+          const v = await pick({ title: it.descricao, value: m.produto_id || '__novo', items: [{ value: '__novo', label: 'Criar novo produto', sub: it.descricao, icon: 'plus' }, ...prods.map((p) => ({ value: p.id, label: p.nome, sub: [p.marca, embalagem(p)].filter(Boolean).join(' · '), icon: 'tag' }))] });
           if (v === undefined) return;
           map[k] = v === '__novo' ? { criar: true } : { produto_id: v };
           passo2();

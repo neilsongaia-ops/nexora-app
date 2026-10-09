@@ -1,5 +1,5 @@
 // Compras: listas, produtos e lojas (hub) + roteamento para lista, sessão, comparação e produto
-import { h, money, relDate, uuid, emit, dmy, initials } from '../util.js';
+import { h, money, relDate, uuid, emit, dmy, initials, embalagem } from '../util.js';
 import { icon } from '../icons.js';
 import { call, load } from '../api.js';
 import { store, can, catNome } from '../store.js';
@@ -78,7 +78,7 @@ function produtos(ctx, body) {
   reload();
 }
 export function prodRow(p, onClick, trail) {
-  return row({ lead: thumb(p), title: p.nome, sub: [p.marca, p.tam_embalagem, p.gtin ? null : 'sem código'].filter(Boolean).join(' · '),
+  return row({ lead: thumb(p), title: p.nome, sub: [p.marca, embalagem(p), p.gtin ? null : 'sem código'].filter(Boolean).join(' · '),
     trail: trail !== undefined ? trail : p.ultimo_preco ? h('span', { class: 'num' }, money(p.ultimo_preco)) : null, trailSub: p.ultimo_preco_data ? relDate(p.ultimo_preco_data) : null, onClick });
 }
 
@@ -106,7 +106,7 @@ export function produtoForm({ edit, initial = {}, fromCatalog, onSaved } = {}) {
     if (!st.nome.trim()) { fn.setError('Dê um nome'); return; }
     b.disabled = true; b.setAttribute('aria-busy', 'true'); err.show('');
     try {
-      const p = { nome: st.nome.trim(), marca: st.marca || undefined, unidade: st.unidade, tam_embalagem: st.tam_embalagem || undefined, categoria_id: st.categoria_id || undefined };
+      const p = { nome: st.nome.trim(), marca: st.marca || undefined, unidade: st.unidade, tam_embalagem: st.tam_embalagem === '' || st.tam_embalagem == null ? undefined : st.tam_embalagem, categoria_id: st.categoria_id || undefined };
       if (edit) Object.assign(p, { id: edit.id, versao: edit.versao }); else if (st.gtin) p.gtin = st.gtin;
       const r = await call('produtos.salvar', p, { rid });
       store.produtos.set(r.id, r);
@@ -116,7 +116,7 @@ export function produtoForm({ edit, initial = {}, fromCatalog, onSaved } = {}) {
   const s = openSheet({ title: edit ? 'Editar produto' : 'Novo produto', size: 'full', footer: b, content: [
     fromCatalog ? h('div', { class: 'warn-item' }, icon('verified'), h('span', {}, 'Encontrado no catálogo colaborativo. Confira e salve.')) : null,
     err, fn,
-    h('div', { class: 'grid-2' }, textField('Marca', { value: st.marca || '', onInput: (v) => { st.marca = v; } }), textField('Embalagem', { value: st.tam_embalagem || '', placeholder: 'Ex.: 500 g', onInput: (v) => { st.tam_embalagem = v; } })),
+    h('div', { class: 'grid-2' }, textField('Marca', { value: st.marca || '', onInput: (v) => { st.marca = v; } }), textField('Tamanho da embalagem', { value: st.tam_embalagem ? String(st.tam_embalagem).replace('.', ',') : '', placeholder: 'Ex.: 500', inputmode: 'decimal', tipText: 'Só o número, na unidade escolhida ao lado (ex.: 500 com Grama = 500 g). Deixe em branco se o produto é vendido por unidade.', onInput: (v) => { st.tam_embalagem = v.replace(/[^\d.,]/g, ''); } })),
     h('div', { class: 'grid-2' }, pickField('Unidade', { value: st.unidade, items: UNID, onChange: (v) => { st.unidade = v; } }), pickField('Categoria', { value: st.categoria_id, items: () => categoriaItems('DESPESA'), placeholder: 'Opcional', onChange: (v) => { st.categoria_id = v; } })),
     edit && edit.gtin ? h('div', { class: 'form-readonly' }, h('div', { class: 'kv' }, h('span', { class: 'kv-k' }, 'Código de barras'), h('span', { class: 'kv-v num' }, edit.gtin))) :
       h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Código de barras'), h('div', { class: 'scan-manual' }, h('input', { class: 'input num', inputmode: 'numeric', value: st.gtin || '', placeholder: 'Opcional', 'aria-label': 'Código de barras', oninput: (e) => { st.gtin = e.target.value.replace(/\D/g, ''); } }),

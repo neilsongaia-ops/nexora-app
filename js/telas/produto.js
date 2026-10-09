@@ -1,5 +1,5 @@
 // Produto: foto, dados, evolução de preço, meu histórico, preços da comunidade (confirmar/mudou), registrar preço, denunciar
-import { h, money, dmy, relDate, uuid, emit, monthShort, HOJE, num } from '../util.js';
+import { h, money, dmy, relDate, uuid, emit, monthShort, HOJE, num, embalagem } from '../util.js';
 import { icon } from '../icons.js';
 import { call, load } from '../api.js';
 import { store, can, catNome } from '../store.js';
@@ -28,7 +28,7 @@ export default async function produto(ctx, id) {
   ] }))] });
   const photo = h('button', { class: 'photo-btn', type: 'button', 'aria-label': 'Foto do produto', onclick: () => fotoMenu() }, thumb(p, 'is-lg'));
   view.append(h('div', { class: 'prod-head' }, photo, h('div', { class: 'prod-head-txt' }, h('h2', { class: 'prod-name' }, p.nome),
-    h('div', { class: 'prod-meta' }, [p.marca, p.tam_embalagem, p.unidade !== 'UN' ? p.unidade : null].filter(Boolean).map((x) => h('span', {}, x)), p.categoria_id ? h('span', {}, catNome(p.categoria_id)) : null),
+    h('div', { class: 'prod-meta' }, [p.marca, embalagem(p), p.unidade === 'KG' || p.unidade === 'L' ? 'vendido por ' + p.unidade.toLowerCase() : null].filter(Boolean).map((x) => h('span', {}, x)), p.categoria_id ? h('span', {}, catNome(p.categoria_id)) : null),
     p.gtin ? h('span', { class: 'prod-meta num' }, icon('barcode'), p.gtin) : badge('Sem código: só neste espaço', 'neutral'))));
   const evo = card('sec-card', sectionHead('Evolução do preço'), skelCards(1));
   const comm = h('section', { class: 'sec' }, sectionHead('Preços da comunidade', tip('Preços de outras pessoas, sem identificar ninguém. Verificado = confirmado por nota ou por várias pessoas.')), skelRows(3));
