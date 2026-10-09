@@ -3,7 +3,7 @@ import { h, money, dmy, relDate, uuid, emit, monthShort, HOJE, num, embalagem } 
 import { icon } from '../icons.js';
 import { call, load } from '../api.js';
 import { store, can, catNome } from '../store.js';
-import { openSheet, openMenu, pick } from '../ui/sheet.js';
+import { openSheet, openMenu, pick, confirmSheet } from '../ui/sheet.js';
 import { toast } from '../ui/toast.js';
 import { chooseImage, imageToThumb } from '../ui/media.js';
 import { card, row, badge, empty, errorState, skelRows, skelCards, sectionHead, btn, iconBtn, thumb, forgetImg, moneyField, pickField, dateField, formError, tip } from '../ui/components.js';
@@ -24,8 +24,13 @@ export default async function produto(ctx, id) {
     ed && { icon: 'edit', label: 'Editar', onClick: () => produtoForm({ edit: p, onSaved: () => ctx.refresh() }) },
     ed && { icon: 'tag', label: 'Registrar preço', onClick: () => registrar(p) },
     ed && { icon: 'bag', label: 'Adicionar a uma lista', onClick: () => addLista(p) },
+    ed && { icon: 'ban', label: 'Inativar produto', tone: 'out', onClick: inativar },
     p.global_id && { icon: 'flag', label: 'Denunciar produto', tone: 'out', onClick: () => denunciar('produto', p.global_id) },
   ] }))] });
+  async function inativar() {
+    if (!(await confirmSheet({ title: `Inativar “${p.nome}”?`, content: 'Ele some das buscas e das listas novas. O histórico de preços e as compras já feitas continuam.', confirm: 'Inativar', tone: 'danger' }))) return;
+    try { await call('produtos.salvar', { id, status: 'INATIVO', versao: p.versao }, { rid: uuid() }); store.produtos.delete(id); toast('Produto inativado.', { tone: 'success' }); emit('dados'); go('/compras/produtos'); } catch (e) { toast(e.message, { tone: 'danger' }); }
+  }
   const photo = h('button', { class: 'photo-btn', type: 'button', 'aria-label': 'Foto do produto', onclick: () => fotoMenu() }, thumb(p, 'is-lg'));
   view.append(h('div', { class: 'prod-head' }, photo, h('div', { class: 'prod-head-txt' }, h('h2', { class: 'prod-name' }, p.nome),
     h('div', { class: 'prod-meta' }, [p.marca, embalagem(p), p.unidade === 'KG' || p.unidade === 'L' ? 'vendido por ' + p.unidade.toLowerCase() : null].filter(Boolean).map((x) => h('span', {}, x)), p.categoria_id ? h('span', {}, catNome(p.categoria_id)) : null),

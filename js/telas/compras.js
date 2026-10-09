@@ -143,6 +143,7 @@ async function lojas(ctx, body) {
         trail: l.distancia_km != null ? h('span', { class: 'num' }, String(l.distancia_km).replace('.', ',') + ' km') : null,
         onClick: () => openMenu({ title: l.nome, items: [
           can('editor') && !l.global && { icon: 'edit', label: 'Editar', onClick: () => lojaForm(l, draw) },
+          can('editor') && !l.global && { icon: 'ban', label: 'Inativar loja', tone: 'out', onClick: async () => { if (!(await confirmSheet({ title: `Inativar “${l.nome}”?`, content: 'Ela deixa de aparecer nas escolhas e nas comparações. Os preços já registrados continuam no histórico.', confirm: 'Inativar', tone: 'danger' }))) return; try { await call('lojas.salvar', { id: l.id, status: 'INATIVO', versao: l.versao }, { rid: uuid() }); toast('Loja inativada.', { tone: 'success' }); emit('dados'); draw(); } catch (e) { toast(e.message, { tone: 'danger' }); } } },
           l.latitude != null && { icon: 'route', label: 'Abrir no mapa', onClick: () => window.open(`https://www.openstreetmap.org/?mlat=${l.latitude}&mlon=${l.longitude}#map=17/${l.latitude}/${l.longitude}`, '_blank', 'noopener') },
           { icon: 'flag', label: 'Denunciar', tone: 'out', onClick: () => denunciar('loja', l.id) },
         ] }),
