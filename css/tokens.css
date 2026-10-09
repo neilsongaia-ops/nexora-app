@@ -1,0 +1,101 @@
+/* Nexora — tokens de design. Todo valor visual do app vem daqui. */
+:root {
+  /* tipografia */
+  --font: "Figtree", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --t-2xs: 0.6875rem; --t-xs: 0.75rem; --t-sm: 0.8125rem; --t-md: 0.9375rem; --t-base: 1rem; --t-lg: 1.125rem;
+  --t-xl: 1.3125rem; --t-2xl: 1.625rem; --t-3xl: 2rem; --t-4xl: 2.5rem; --t-5xl: 3rem;
+  --w-r: 450; --w-m: 550; --w-s: 650; --w-b: 750; --w-x: 800;
+  --lh-tight: 1.15; --lh: 1.4; --lh-loose: 1.55;
+  --track-tight: -0.02em; --track-wide: 0.06em;
+
+  /* espaço */
+  --s0: 2px; --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 20px; --s6: 24px; --s7: 32px; --s8: 40px; --s9: 48px; --s10: 64px;
+  --gutter: var(--s4);
+  --bw: 1px; --bw-2: 2px; --focus-w: 3px;
+
+  /* raios */
+  --r-xs: 6px; --r-sm: 10px; --r-md: 14px; --r-lg: 20px; --r-xl: 28px; --r-pill: 999px;
+
+  /* medidas */
+  --tap: 44px; --tap-lg: 52px; --ico: 20px; --ico-sm: 16px; --ico-lg: 24px;
+  --top-h: 56px; --tabbar-h: 62px; --side-w: 252px; --rail-w: 80px; --content-max: 1180px; --sheet-max: 640px; --form-max: 560px;
+  --avatar: 36px; --thumb: 48px; --thumb-lg: 96px; --fab: 58px;
+  --safe-t: env(safe-area-inset-top, 0px); --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-l: env(safe-area-inset-left, 0px); --safe-r: env(safe-area-inset-right, 0px);
+
+  /* movimento */
+  --d-1: 120ms; --d-2: 200ms; --d-3: 320ms; --d-4: 480ms; --d-5: 900ms;
+  --ease: cubic-bezier(.2, .8, .2, 1); --ease-out: cubic-bezier(.16, 1, .3, 1); --ease-spring: cubic-bezier(.34, 1.45, .64, 1); --ease-in: cubic-bezier(.5, 0, .75, 0);
+  --lift: translateY(10px); --press: scale(.97);
+
+  /* camadas */
+  --z-top: 20; --z-nav: 30; --z-fab: 35; --z-ptr: 25; --z-sheet: 50; --z-toast: 70; --z-tip: 80;
+
+  /* opacidades */
+  --o-dim: .38; --o-muted: .6; --o-scrim: .48;
+
+  /* cores — tema claro (quente, papel) */
+  --bg: oklch(0.975 0.008 70);
+  --surface: oklch(0.995 0.004 70);
+  --surface-2: oklch(0.955 0.011 68);
+  --surface-3: oklch(0.925 0.014 66);
+  --line: oklch(0.9 0.013 65);
+  --line-2: oklch(0.84 0.016 62);
+  --ink: oklch(0.24 0.02 45);
+  --ink-2: oklch(0.41 0.02 50);
+  --ink-3: oklch(0.51 0.02 55);
+  --scrim: oklch(0.2 0.02 45);
+  --brand: oklch(0.5 0.15 355);
+  --brand-strong: oklch(0.43 0.15 355);
+  --brand-ink: oklch(0.99 0.005 355);
+  --brand-soft: oklch(0.94 0.035 355);
+  --in: oklch(0.5 0.12 150);       --in-soft: oklch(0.94 0.04 150);
+  --out: oklch(0.52 0.17 28);      --out-soft: oklch(0.945 0.03 28);
+  --xfer: oklch(0.5 0.13 250);     --xfer-soft: oklch(0.945 0.025 250);
+  --warn: oklch(0.52 0.11 65);     --warn-soft: oklch(0.945 0.05 80);
+  --focus: oklch(0.55 0.17 355);
+  --c1: oklch(0.66 0.13 355); --c2: oklch(0.68 0.13 40); --c3: oklch(0.74 0.12 80); --c4: oklch(0.66 0.12 145);
+  --c5: oklch(0.66 0.1 195); --c6: oklch(0.62 0.12 255); --c7: oklch(0.6 0.12 305); --c8: oklch(0.76 0.02 60);
+  --card-1: oklch(0.36 0.06 355); --card-2: oklch(0.28 0.05 25);
+  --sh-1: 0 1px 2px oklch(0.3 0.03 50 / .06), 0 1px 1px oklch(0.3 0.03 50 / .04);
+  --sh-2: 0 4px 14px oklch(0.3 0.03 50 / .08), 0 1px 3px oklch(0.3 0.03 50 / .06);
+  --sh-3: 0 -8px 40px oklch(0.25 0.03 50 / .16), 0 -1px 4px oklch(0.25 0.03 50 / .06);
+  --sh-fab: 0 8px 22px oklch(0.45 0.15 355 / .35), 0 2px 6px oklch(0.3 0.03 50 / .15);
+  --shimmer: oklch(1 0 0 / .65);
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  --bg: oklch(0.2 0.012 50);
+  --surface: oklch(0.235 0.013 50);
+  --surface-2: oklch(0.27 0.014 50);
+  --surface-3: oklch(0.31 0.015 50);
+  --line: oklch(0.33 0.014 50);
+  --line-2: oklch(0.41 0.016 50);
+  --ink: oklch(0.95 0.01 70);
+  --ink-2: oklch(0.82 0.012 65);
+  --ink-3: oklch(0.72 0.014 60);
+  --scrim: oklch(0.08 0.01 50);
+  --brand: oklch(0.76 0.13 355);
+  --brand-strong: oklch(0.82 0.11 355);
+  --brand-ink: oklch(0.2 0.04 355);
+  --brand-soft: oklch(0.32 0.06 355);
+  --in: oklch(0.79 0.14 150);      --in-soft: oklch(0.3 0.05 150);
+  --out: oklch(0.76 0.14 28);      --out-soft: oklch(0.31 0.06 28);
+  --xfer: oklch(0.78 0.11 250);    --xfer-soft: oklch(0.3 0.05 250);
+  --warn: oklch(0.83 0.12 80);     --warn-soft: oklch(0.32 0.05 80);
+  --focus: oklch(0.8 0.13 355);
+  --c1: oklch(0.72 0.13 355); --c2: oklch(0.74 0.12 40); --c3: oklch(0.8 0.11 85); --c4: oklch(0.74 0.12 145);
+  --c5: oklch(0.74 0.09 195); --c6: oklch(0.72 0.11 255); --c7: oklch(0.7 0.11 305); --c8: oklch(0.6 0.02 60);
+  --card-1: oklch(0.42 0.08 355); --card-2: oklch(0.3 0.05 25);
+  --sh-1: 0 1px 2px oklch(0 0 0 / .3);
+  --sh-2: 0 6px 18px oklch(0 0 0 / .35);
+  --sh-3: 0 -8px 40px oklch(0 0 0 / .5);
+  --sh-fab: 0 8px 22px oklch(0 0 0 / .45);
+  --shimmer: oklch(1 0 0 / .07);
+  color-scheme: dark;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root { --d-1: 0ms; --d-2: 0ms; --d-3: 0ms; --d-4: 0ms; --d-5: 0ms; --lift: none; --press: none; }
+  *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; }
+}

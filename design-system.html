@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Nexora · Sistema de design</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="css/tokens.css"><link rel="stylesheet" href="css/base.css"><link rel="stylesheet" href="css/components.css"><link rel="stylesheet" href="css/telas.css">
+<script>document.documentElement.dataset.theme=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'</script>
+<style>
+.ds{max-width:var(--content-max);margin:0 auto;padding:var(--s7) var(--gutter) var(--s10);display:flex;flex-direction:column;gap:var(--s8)}
+.ds-head{display:flex;flex-wrap:wrap;gap:var(--s4);align-items:center;justify-content:space-between}
+.ds-sec{display:flex;flex-direction:column;gap:var(--s4)}
+.ds-h{font-size:var(--t-xl);font-weight:var(--w-b);padding-bottom:var(--s2);border-bottom:var(--bw) solid var(--line)}
+.ds-sub{font-size:var(--t-sm);color:var(--ink-3);font-family:var(--font-mono)}
+.ds-row{display:flex;flex-wrap:wrap;gap:var(--s3);align-items:center}
+.ds-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,280px),1fr));gap:var(--s4);align-items:start}
+.ds-sw{display:flex;flex-direction:column;gap:var(--s1);font-size:var(--t-xs);color:var(--ink-3);font-family:var(--font-mono)}
+.ds-sw i{height:var(--s9);border-radius:var(--r-md);background:var(--c);box-shadow:inset 0 0 0 var(--bw) var(--line)}
+.ds-sws{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:var(--s3)}
+.ds-ico{display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:var(--s2)}
+.ds-ico div{display:flex;flex-direction:column;align-items:center;gap:var(--s1);padding:var(--s3) var(--s1);border-radius:var(--r-md);background:var(--surface);font-size:var(--t-2xs);color:var(--ink-3);font-family:var(--font-mono)}
+.ds-type>*{margin:0}
+.ds-sp{display:flex;align-items:flex-end;gap:var(--s2)}
+.ds-sp i{display:block;width:var(--s6);background:var(--brand-soft);border-radius:var(--r-xs);height:var(--h)}
+</style>
+</head>
+<body>
+<main class="ds" id="ds">
+  <header class="ds-head"><div class="auth-brand"><span class="logo logo--lg"><span class="logo-dot"></span></span><div><span class="auth-name">nexora</span><p class="muted">Sistema de design · tokens e componentes</p></div></div><div id="theme"></div></header>
+</main>
+<div id="sheets"></div><div id="toasts" class="toasts" aria-live="polite"></div>
+<script src="config.js"></script>
+<script type="module">
+import { h, money } from './js/util.js';
+import { icon, ICONES } from './js/icons.js';
+import * as C from './js/ui/components.js';
+import { donut, monthBars, gauge, line, hbars, PALETA } from './js/ui/charts.js';
+import { openSheet, openMenu, pick, pickDate, confirmSheet } from './js/ui/sheet.js';
+import { toast, undoable } from './js/ui/toast.js';
+import { swipeable } from './js/ui/gestures.js';
+const ds = document.getElementById('ds');
+const sec = (title, sub, ...kids) => ds.append(h('section', { class: 'ds-sec' }, h('h2', { class: 'ds-h' }, title), sub ? h('p', { class: 'ds-sub' }, sub) : null, ...kids));
+document.getElementById('theme').append(C.segmented([{ value: 'light', label: 'Claro', icon: 'sun' }, { value: 'dark', label: 'Escuro', icon: 'moon' }], { value: document.documentElement.dataset.theme, aria: 'Tema', onChange: (v) => { document.documentElement.dataset.theme = v; } }));
+
+const cores = [['bg','Fundo'],['surface','Superfície'],['surface-2','Superfície 2'],['surface-3','Superfície 3'],['line','Linha'],['ink','Texto'],['ink-2','Texto 2'],['ink-3','Texto 3'],['brand','Marca'],['brand-soft','Marca suave'],['in','Entrada'],['in-soft',''],['out','Saída'],['out-soft',''],['xfer','Transferência'],['xfer-soft',''],['warn','Alerta'],['warn-soft','']];
+sec('Cores', 'tokens.css · oklch · claro e escuro · nunca só cor: sempre com ícone ou sinal',
+  h('div', { class: 'ds-sws' }, cores.map(([n, l]) => h('div', { class: 'ds-sw' }, h('i', { style: { '--c': `var(--${n})` } }), '--' + n, l ? h('span', {}, l) : null))),
+  h('div', { class: 'ds-sws' }, PALETA.map((c, i) => h('div', { class: 'ds-sw' }, h('i', { style: { '--c': c } }), '--c' + (i + 1)))));
+sec('Tipografia', 'Figtree · números tabulares',
+  h('div', { class: 'ds-type sec' }, ...[['--t-5xl', 'R$ 12.480,90', 'x'], ['--t-3xl', 'Título grande', 'x'], ['--t-xl', 'Título de tela', 'b'], ['--t-lg', 'Título de seção', 'b'], ['--t-base', 'Texto de corpo para leitura confortável.', 'r'], ['--t-sm', 'Texto secundário e legendas', 'm'], ['--t-xs', 'RÓTULO EM CAIXA ALTA', 'b']].map(([t, txt, w]) => h('p', { class: 'num', style: { 'font-size': `var(${t})`, 'font-weight': `var(--w-${w})` } }, txt, ' ', h('span', { class: 'ds-sub' }, t)))));
+sec('Espaço e raios', '--s1 … --s10 · --r-xs … --r-xl', h('div', { class: 'ds-sp' }, [1,2,3,4,5,6,7,8,9,10].map((n) => h('i', { style: { '--h': `var(--s${n})` }, title: '--s' + n }))),
+  h('div', { class: 'ds-row' }, ['xs','sm','md','lg','xl','pill'].map((r) => h('div', { class: 'card', style: { 'border-radius': `var(--r-${r})` } }, '--r-' + r))));
+sec('Ícones', 'icons.js · traço 1,8 · currentColor', h('div', { class: 'ds-ico' }, ICONES.map((n) => h('div', {}, icon(n), n))));
+sec('Botões', 'btn · icon-btn · estados: hover, pressionado, ocupado, desabilitado',
+  h('div', { class: 'ds-row' }, C.btn('Salvar'), C.btn('Cancelar', { kind: 'secondary' }), C.btn('Mais opções', { kind: 'ghost', icon: 'plus' }), C.btn('Estornar', { kind: 'danger', icon: 'undo' }), C.btn('Grande', { size: 'lg' }), C.btn('Pequeno', { size: 'sm', kind: 'secondary' }), C.btn('Desabilitado', { disabled: true }),
+    (() => { const b = C.btn('Enviando'); b.setAttribute('aria-busy', 'true'); return b; })(), C.iconBtn('dots', 'Opções'), C.iconBtn('search', 'Buscar')));
+sec('Chips, selos e dica', 'chip · badge · tipo-ico · tip',
+  h('div', { class: 'ds-row' }, C.chip('Período', { ic: 'chevD' }), C.chip('Este mês', { selected: true }), C.chip('Perto de mim', { ic: 'pin' })),
+  h('div', { class: 'ds-row' }, ...Object.values(C.STATUS).map((s) => C.badge(s.label, s.tone, s.icon)), C.badge('Verificado', 'in', 'verified'), C.badge('Suspeito', 'out', 'alert'), C.badge('Vencida', 'out')),
+  h('div', { class: 'ds-row' }, C.tipoIcon('ENTRADA'), C.tipoIcon('SAIDA'), C.tipoIcon('TRANSFERENCIA'), C.amount(6200, { tipo: 'ENTRADA' }), C.amount(248.3, { tipo: 'SAIDA' }), C.amount(800, { tipo: 'TRANSFERENCIA' }), C.amount(-1234567.89, { sign: true, cls: 'is-xl' }), C.tip('Dica curta: o único padrão de ajuda do app.')));
+const rows = h('div', { class: 'list' },
+  swipeable(C.row({ lead: C.tipoIcon('SAIDA'), title: 'Supermercado Bom Preço', sub: 'Mercado · Cartão Aurora', badges: [C.badge('3×', 'neutral', 'card')], trail: C.amount(248.3, { tipo: 'SAIDA' }), onClick: () => toast('Toque abre as opções') }), { right: { label: 'Duplicar', icon: 'copy', tone: 'xfer', run: () => toast('Duplicar') }, left: { label: 'Estornar', icon: 'undo', tone: 'out', run: () => toast('Estornar') } }),
+  C.row({ cls: 'is-late', lead: C.tipoIcon('SAIDA'), title: 'Conta de água', badges: [C.badge('Atrasado', 'out', 'alert')], sub: 'Venceu há 4 dias', trail: C.amount(96.3, { tipo: 'SAIDA' }) }),
+  C.row({ cls: 'is-dead', lead: C.tipoIcon('SAIDA'), title: 'Tênis de corrida com um nome muito longo que precisa truncar com elegância', badges: [C.statusBadge('ESTORNADO')], trail: C.amount(459.9, { tipo: 'SAIDA', strike: true }) }),
+  C.row({ lead: C.thumb({ nome: 'Café torrado' }), title: 'Café torrado e moído', sub: 'Serra Azul · 500 g', trail: C.stepper({ value: 2, small: true }) }));
+sec('Itens de lista', 'row · deslize (toque e mouse) · atrasado · estornado · miniatura', rows);
+const st = h('div', { class: 'ds-grid' },
+  C.card('sec-card', C.textField('Descrição', { placeholder: 'Ex.: Mercado' }), C.moneyField('Valor', { value: 1234.56 }), C.pickField('Categoria', { items: [{ value: 1, label: 'Mercado', icon: 'tag' }, { value: 2, label: 'Restaurantes', icon: 'tag' }], placeholder: 'Escolher' }), C.dateField('Data')),
+  C.card('sec-card', C.moneyField('Valor grande', { big: true, value: 89.9 }), C.segmented([{ value: 'SAIDA', label: 'Saída', icon: 'out', tone: 'out' }, { value: 'ENTRADA', label: 'Entrada', icon: 'in', tone: 'in' }, { value: 'TRANSFERENCIA', label: 'Transf.', icon: 'swap', tone: 'xfer' }], { value: 'SAIDA', cls: 'seg--tipo', aria: 'Tipo' }),
+    C.stepper({ value: 3, format: (v) => v + '×' }), C.toggle('Compartilhar preços', { checked: true, sub: 'Sem identificar você' }), C.searchBox({ placeholder: 'Buscar', onSearch: () => {} })),
+  C.card('sec-card', (() => { const f = C.textField('Com erro', { value: 'x' }); f.setError('Informe a descrição'); return f; })(), (() => { const e = C.formError(); e.show('Não foi possível salvar.'); return e; })(), C.kv('Total', money(1234.56), 'is-total')));
+sec('Campos', 'sem <select> nativo · máscara de moeda · fonte ≥ 16 px', st);
+sec('Medidores e gráficos', 'SVG próprio · toque/hover mostra valores · animação só transform/opacity',
+  h('div', { class: 'ds-grid' },
+    C.card('sec-card', C.progress(1000, 640), C.progress(1000, 920), C.progress(1000, 1240), h('div', { class: 'ccard-limit' }, h('div', { class: 'meter-line', style: { '--p': '.62' } }))),
+    C.card('sec-card', gauge({ limite: 6000, usado: 4200 })),
+    C.card('sec-card', donut([{ label: 'Mercado', value: 1200 }, { label: 'Moradia', value: 2400 }, { label: 'Transporte', value: 600 }, { label: 'Lazer', value: 300 }].map((d, i) => ({ ...d, color: PALETA[i] })), { center: 'R$ 4.500', centerSub: 'outubro' })),
+    C.card('sec-card', monthBars([5200, 6100, 4800, 7000, 6400, 6900].map((r, i) => ({ receitas: r, despesas: r * (0.7 + i * 0.05), resultado: r * 0.2 })), { media: 4900, labels: ['mai', 'jun', 'jul', 'ago', 'set', 'out'] })),
+    C.card('sec-card', line([18, 18.9, 18.4, 19.6, 20.8].map((y, i) => ({ y, label: `0${i + 1}/10` })))),
+    C.card('sec-card', hbars([{ label: 'Mercado A', best: true, parts: [{ label: 'Compras', value: 180 }, { label: 'Deslocamento', value: 6, cls: 'is-desl' }] }, { label: 'Mercado B', parts: [{ label: 'Compras', value: 160 }, { label: 'Estimado', value: 30, cls: 'is-est' }, { label: 'Deslocamento', value: 18, cls: 'is-desl' }] }]))));
+sec('Estados', 'vazio · erro com tentar de novo · carregando com brilho',
+  h('div', { class: 'ds-grid' }, C.card('', C.empty({ ic: 'list', title: 'Nenhum lançamento ainda', action: C.btn('Novo lançamento', { icon: 'plus' }) })), C.card('', C.errorState('Sem conexão com o servidor.', () => toast('Tentando de novo'))), h('div', { class: 'sec' }, C.skelRows(3), C.skelCards(2))));
+sec('Sheets, menus e avisos', 'arrastar para fechar · toque fora · Esc · botão voltar',
+  h('div', { class: 'ds-row' },
+    C.btn('Sheet', { kind: 'secondary', onClick: () => openSheet({ title: 'Sheet', content: h('p', {}, 'Arraste para baixo para fechar.'), footer: C.btn('Ok', { full: true }) }) }),
+    C.btn('Sheet com paradas', { kind: 'secondary', onClick: () => openSheet({ title: 'Detalhe', snap: true, size: 'full', content: C.skelRows(12) }) }),
+    C.btn('Menu de ações', { kind: 'secondary', onClick: () => openMenu({ title: 'Supermercado', items: [{ icon: 'check', label: 'Efetivar' }, { icon: 'edit', label: 'Editar' }, { icon: 'history', label: 'Histórico' }, { icon: 'undo', label: 'Estornar', tone: 'out' }] }) }),
+    C.btn('Seletor', { kind: 'secondary', onClick: () => pick({ title: 'Categoria', items: Array.from({ length: 14 }, (_, i) => ({ value: i, label: 'Categoria ' + (i + 1), group: i < 7 ? 'Despesas' : 'Receitas', icon: 'tag' })) }) }),
+    C.btn('Data', { kind: 'secondary', onClick: () => pickDate({}) }),
+    C.btn('Confirmação', { kind: 'secondary', onClick: () => confirmSheet({ title: 'Pagar R$ 789,82?', confirm: 'Pagar' }) }),
+    C.btn('Toast', { kind: 'secondary', onClick: () => toast('Lançamento salvo.', { tone: 'success' }) }),
+    C.btn('Desfazer', { kind: 'secondary', onClick: () => undoable('Será cancelado', async () => toast('Cancelado.')) })));
+</script>
+</body></html>
