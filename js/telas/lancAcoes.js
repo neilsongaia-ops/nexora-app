@@ -1,5 +1,5 @@
 // Ações e detalhe de lançamento: menu ao toque, deslizar, efetivar, cancelar, estornar, histórico.
-import { h, money, dmy, relDate, HOJE, uuid, emit, instant } from '../util.js';
+import { h, money, dmy, relDate, HOJE, uuid, emit, instant, monthLong } from '../util.js';
 import { icon } from '../icons.js';
 import { call, load } from '../api.js';
 import { store, can, catNome } from '../store.js';
@@ -129,7 +129,7 @@ export async function openLancDetail(id) {
         try { await call('lancamentos.atualizar', { id: d.id, versao: d.versao, itens: [{ id: it.id, categoria_id: v }] }, { rid: uuid() }); toast('Categoria do item alterada.', { tone: 'success' }); emit('dados'); draw(); } catch (e) { toast(e.message, { tone: 'danger' }); if (e.codigo === 'CONFLITO') draw(); }
       } : null,
     })))] : null;
-    const parcelas = d.parcelas.length ? [sectionHead('Parcelas'), h('div', { class: 'list' }, d.parcelas.map((p) => row({ lead: h('span', { class: 'parc-n num' }, `${p.numero}/${p.total}`), title: 'Fatura ' + p.fatura_id.split('~')[1].split('-').reverse().join('/'), badges: p.status === 'CANCELADA' ? [badge('Cancelada', 'muted')] : null, trail: h('span', { class: 'num' + (p.valor < 0 ? ' tone-in' : '') }, money(p.valor)) })))] : null;
+    const parcelas = d.parcelas.length ? [sectionHead('Parcelas'), h('div', { class: 'list' }, d.parcelas.map((p) => row({ lead: h('span', { class: 'parc-n num' }, `${p.numero}/${p.total}`), title: (ym => ym ? 'Fatura de ' + monthLong(ym) : 'Fatura')(p.fatura_mes || String(p.fatura_id || '').split('~')[1] || ''), badges: ['CANCELADA', 'CANCELADO'].includes(p.status) ? [badge('Cancelada', 'muted')] : null, trail: h('span', { class: 'num' + (p.valor < 0 ? ' tone-in' : '') }, money(p.valor)) })))] : null;
     const mov = [sectionHead('Movimentações'), h('div', { class: 'list' }, d.movimentacoes.map((m) => row({
       lead: h('span', { class: 'tipo-ico tone-' + (m.natureza === 'CREDITO' ? 'in' : 'out') }, icon(m.natureza === 'CREDITO' ? 'in' : 'out')),
       title: recNome(m.recurso_id), sub: m.data_efetivacao ? 'Efetivada em ' + dmy(m.data_efetivacao) : 'Ainda não conta no saldo',
