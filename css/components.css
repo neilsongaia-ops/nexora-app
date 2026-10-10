@@ -416,6 +416,9 @@ textarea.input { padding: var(--s3) var(--s4); min-height: 120px; resize: vertic
 @keyframes scan { from { transform: translateY(-36px); } to { transform: translateY(36px); } }
 .scan-status { color: var(--ink-2); font-size: var(--t-sm); }
 .scan-status:empty { display: none; }
+.cap-actions { display: grid; gap: var(--s2); }
+.cap-preview { display: block; }
+.cap-preview[hidden], .scan-video[hidden] { display: none; }
 .scan-manual { display: flex; gap: var(--s2); }
 .scan-manual .input { flex: 1; }
 

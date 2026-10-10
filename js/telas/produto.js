@@ -5,7 +5,7 @@ import { call, load } from '../api.js';
 import { store, can, catNome } from '../store.js';
 import { openSheet, openMenu, pick, confirmSheet } from '../ui/sheet.js';
 import { toast } from '../ui/toast.js';
-import { chooseImage, imageToThumb } from '../ui/media.js';
+import { chooseImage, imageToThumb, capturePhoto } from '../ui/media.js';
 import { card, row, badge, empty, errorState, skelRows, skelCards, sectionHead, btn, iconBtn, thumb, forgetImg, moneyField, pickField, dateField, formError, tip } from '../ui/components.js';
 import { line } from '../ui/charts.js';
 import { produtoForm, denunciar, lojaForm } from './compras.js';
@@ -86,11 +86,16 @@ export default async function produto(ctx, id) {
     ] });
   }
   async function foto(camera) {
-    const f = await chooseImage({ camera });
-    if (!f) return;
+    let f = null, pronta = null;
+    if (camera) {                                   // câmera DENTRO do app: não sai da página (celulares com pouca memória recarregavam)
+      const r = await capturePhoto();
+      if (!r) return;
+      if (r.dados) pronta = r.dados; else f = r.file;
+    } else f = await chooseImage({ camera: false });
+    if (!pronta && !f) return;
     const t = toast('Enviando foto…', { ico: 'upload', duration: 10000 });
     try {
-      const dados = await imageToThumb(f);
+      const dados = pronta || await imageToThumb(f);
       const r = await call('produtos.imagem.salvar', { produto_id: id, dados }, { rid: uuid() });
       t(); forgetImg(id); p.tem_imagem = true; store.produtos.set(id, p);
       toast(r.publicada_no_catalogo ? 'Foto salva e compartilhada no catálogo.' : 'Foto salva.', { tone: 'success' });
