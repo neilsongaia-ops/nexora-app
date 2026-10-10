@@ -2,7 +2,7 @@
 import { isoLocal, addDays, addMonths, diffDays, r2, sleep, monthStart, monthEnd } from './util.js';
 
 const T = isoLocal(new Date());
-const KEY = 'nx.demo.v8', FK = 'nx.demo.flags';
+const KEY = 'nx.demo.v9', FK = 'nx.demo.flags';
 const sget = (k) => { try { return JSON.parse(sessionStorage.getItem(k)); } catch { return null; } };
 const sset = (k, v) => { try { sessionStorage.setItem(k, JSON.stringify(v)); } catch { /* cheio */ } };
 const flags = Object.assign({ lento: false, falhar: false, conflito: false, expirar: false, offline: false, semBanco: false, vazio: false, contaNova: false }, sget(FK) || {});
@@ -24,8 +24,8 @@ const PAPEL_TXT = { leitura: 'leitura', editor: 'editor', admin: 'administrador'
 const PREF_TIPOS = [
   { tipo: 'LANCAMENTO_MEMBRO', titulo: 'Lançamentos de outras pessoas', descricao: 'Quando alguém do espaço lança uma receita ou despesa.' },
   { tipo: 'FATURA_VENCENDO', titulo: 'Fatura perto de vencer', descricao: 'Até 3 dias antes do vencimento.' },
-  { tipo: 'PLANEJAMENTO_80', titulo: 'Planejamento em 80%', descricao: 'Quando um planejamento chega a 80% do limite.' },
-  { tipo: 'PLANEJAMENTO_100', titulo: 'Planejamento em 100%', descricao: 'Quando um planejamento atinge ou passa o limite.' },
+  { tipo: 'PLANEJAMENTO_80', titulo: 'Planejamento em 80%', descricao: 'Quando um planejamento chega a 80% do limite ou da meta.' },
+  { tipo: 'PLANEJAMENTO_100', titulo: 'Planejamento em 100%', descricao: 'Quando um planejamento atinge o limite ou bate a meta.' },
   { tipo: 'QUEDA_PRECO', titulo: 'Queda de preço', descricao: 'Produto que você compra 10% mais barato em outra loja.' },
 ];
 const prefsDe = () => DB.prefsNotif || (DB.prefsNotif = {});
@@ -200,26 +200,54 @@ function linhasConsumo(S, de, ate) {
   }
   return out;
 }
-function planDe(S, linha) {
+function linhasReceita(S, de, ate) {
+  const out = [];
+  for (const l of S.lancamentos) {
+    if (l.data_evento < de || l.data_evento > ate) continue;
+    let sign = 0;
+    if (l.tipo === 'ENTRADA' && (l.status === 'EFETIVADO' || l.status === 'ESTORNADO') && !['ESTORNO', 'SALDO_INICIAL'].includes(l.origem)) sign = 1;
+    if (l.origem === 'ESTORNO' && l.tipo === 'SAIDA') sign = -1;
+    if (!sign) continue;
+    out.push({ l, categoria_id: l.categoria_id, valor: sign * l.valor_total, data: l.data_evento });
+  }
+  return out;
+}
+function planDe(S, linha, tipo = 'SAIDA') {
   const anc = ancestors(S, linha.categoria_id);
   let best = null;
   for (const p of S.planejamentos) {
+    if ((p.tipo || 'SAIDA') !== tipo) continue;
     if (p.status !== 'ATIVO' || linha.data < p.data_inicio || (p.data_fim && linha.data > p.data_fim)) continue;
     const pc = p.categorias.find((c) => anc.includes(c.categoria_id));
     if (pc && (!best || p.prioridade < best.p.prioridade)) best = { p, pc };
   }
   return best;
 }
+const vigenteP = (p) => p.data_inicio <= T && (!p.data_fim || p.data_fim >= T);
+const fimPeriodo = (ini, r) => {
+  const n = r.intervalo || 1;
+  if (r.periodicidade === 'MENSAL') return addDays(addMonths(ini, n), -1);
+  if (r.periodicidade === 'ANUAL') return addDays(addMonths(ini, 12 * n), -1);
+  if (r.periodicidade === 'SEMANAL') return addDays(ini, 7 * n - 1);
+  return addDays(ini, n - 1);
+};
 function situacaoPlan(S, p) {
+  const tipo = p.tipo || 'SAIDA';
   const cats = p.categorias.map((c) => ({ categoria_id: c.categoria_id, nome: (S.categorias.find((x) => x.id === c.categoria_id) || {}).nome || '', limite: c.valor_limite || 0, percentual_execucao: c.percentual_execucao || 100, realizado: 0 }));
-  for (const ln of linhasConsumo(S, p.data_inicio, p.data_fim || '9999-12-31')) {
-    const b = planDe(S, ln);
+  const linhas = tipo === 'ENTRADA' ? linhasReceita(S, p.data_inicio, p.data_fim || '9999-12-31') : linhasConsumo(S, p.data_inicio, p.data_fim || '9999-12-31');
+  for (const ln of linhas) {
+    const b = planDe(S, ln, tipo);
     if (b && b.p.id === p.id) { const c = cats.find((x) => x.categoria_id === b.pc.categoria_id); c.realizado += ln.valor * (b.pc.percentual_execucao || 100) / 100; }
   }
   cats.forEach((c) => { c.realizado = r2(c.realizado); c.disponivel = r2(Math.max(0, c.limite - c.realizado)); c.excedido = r2(Math.max(0, c.realizado - c.limite)); });
   const real = r2(cats.reduce((s, c) => s + c.realizado, 0));
-  return { id: p.id, nome: p.nome, data_inicio: p.data_inicio, data_fim: p.data_fim, prioridade: p.prioridade, status: p.status, versao: p.versao,
-    planejado: p.valor_limite, realizado: real, disponivel: r2(Math.max(0, p.valor_limite - real)), excedido: r2(Math.max(0, real - p.valor_limite)), categorias: cats };
+  const rc = p.recorrencia || null;
+  const prox = rc && rc.status === 'ATIVA' && p.data_fim ? addDays(p.data_fim, 1) : null;
+  return { id: p.id, nome: p.nome, tipo, data_inicio: p.data_inicio, data_fim: p.data_fim, prioridade: p.prioridade, status: p.status, versao: p.versao,
+    vigente: vigenteP(p), serie_id: p.serie_id || null,
+    recorrencia: rc ? { status: rc.status, periodicidade: rc.periodicidade, intervalo: rc.intervalo || 1, ate: rc.ate || null, proximo_inicio: prox && (!rc.ate || prox <= rc.ate) ? prox : null } : null,
+    planejado: p.valor_limite, realizado: real, disponivel: r2(Math.max(0, p.valor_limite - real)), excedido: r2(Math.max(0, real - p.valor_limite)),
+    percentual: p.valor_limite ? Math.round(real / p.valor_limite * 1000) / 10 : 0, meta_atingida: tipo === 'ENTRADA' && real >= p.valor_limite, categorias: cats };
 }
 function execucoes(S, l) {
   const out = [];
@@ -401,7 +429,16 @@ function seedCasa() {
   }
   // planejamentos
   const mi = monthStart(T), mf = monthEnd(T);
-  S.planejamentos.push({ id: 'pl1', nome: 'Mercado e casa', data_inicio: mi, data_fim: mf, valor_limite: 1800, prioridade: 1, status: 'ATIVO', versao: 1, categorias: [{ categoria_id: 'c_alim', valor_limite: 1400, percentual_execucao: 100 }, { categoria_id: 'c_casa', valor_limite: 400, percentual_execucao: 100 }] });
+  const pm1 = monthStart(addMonths(T, -1)), pm2 = monthStart(addMonths(T, -2));
+  const mercCats = () => [{ categoria_id: 'c_alim', valor_limite: 1400, percentual_execucao: 100 }, { categoria_id: 'c_casa', valor_limite: 400, percentual_execucao: 100 }];
+  const mensal = () => ({ periodicidade: 'MENSAL', intervalo: 1, ate: null, status: 'ATIVA' });
+  S.planejamentos.push({ id: 'pl1a', nome: 'Mercado e casa', tipo: 'SAIDA', serie_id: 'pl1', recorrencia: null, data_inicio: pm2, data_fim: monthEnd(pm2), valor_limite: 1600, prioridade: 1, status: 'ATIVO', versao: 1, categorias: [{ categoria_id: 'c_alim', valor_limite: 1250, percentual_execucao: 100 }, { categoria_id: 'c_casa', valor_limite: 350, percentual_execucao: 100 }] });
+  S.planejamentos.push({ id: 'pl1b', nome: 'Mercado e casa', tipo: 'SAIDA', serie_id: 'pl1', recorrencia: null, data_inicio: pm1, data_fim: monthEnd(pm1), valor_limite: 1800, prioridade: 1, status: 'ATIVO', versao: 1, categorias: mercCats() });
+  S.planejamentos.push({ id: 'pl1', nome: 'Mercado e casa', tipo: 'SAIDA', serie_id: 'pl1', recorrencia: mensal(), data_inicio: mi, data_fim: mf, valor_limite: 1800, prioridade: 1, status: 'ATIVO', versao: 1, categorias: mercCats() });
+  S_({ tipo: 'ENTRADA', descricao: 'Revisão de portfólio', valor_bruto: 850, data_evento: mi, recurso_id: cc, categoria_id: 'c_free' });
+  const rendaCats = () => [{ categoria_id: 'c_sal', valor_limite: 10500, percentual_execucao: 100 }, { categoria_id: 'c_free', valor_limite: 1500, percentual_execucao: 100 }];
+  S.planejamentos.push({ id: 'pl5a', nome: 'Renda do mês', tipo: 'ENTRADA', serie_id: 'pl5', recorrencia: null, data_inicio: pm1, data_fim: monthEnd(pm1), valor_limite: 12000, prioridade: 1, status: 'ATIVO', versao: 1, categorias: rendaCats() });
+  S.planejamentos.push({ id: 'pl5', nome: 'Renda do mês', tipo: 'ENTRADA', serie_id: 'pl5', recorrencia: mensal(), data_inicio: mi, data_fim: mf, valor_limite: 12000, prioridade: 1, status: 'ATIVO', versao: 1, categorias: rendaCats() });
   S.planejamentos.push({ id: 'pl2', nome: 'Lazer e passeios', data_inicio: mi, data_fim: mf, valor_limite: 180, prioridade: 2, status: 'ATIVO', versao: 1, categorias: [{ categoria_id: 'c_lazer', valor_limite: 150, percentual_execucao: 100 }, { categoria_id: 'c_pres', valor_limite: 30, percentual_execucao: 100 }] });
   S.planejamentos.push({ id: 'pl3', nome: 'Transporte', data_inicio: mi, data_fim: mf, valor_limite: 750, prioridade: 3, status: 'ATIVO', versao: 1, categorias: [{ categoria_id: 'c_transp', valor_limite: 750, percentual_execucao: 100 }] });
   S.planejamentos.push({ id: 'pl4', nome: 'Saúde do ano', data_inicio: T.slice(0, 4) + '-01-01', data_fim: T.slice(0, 4) + '-12-31', valor_limite: 9600, prioridade: 4, status: 'ATIVO', versao: 1, categorias: [{ categoria_id: 'c_saude', valor_limite: 9600, percentual_execucao: 100 }] });
@@ -469,6 +506,7 @@ function seedConvites() {
     { id: 'nt8', tipo: 'PLANEJAMENTO_80', titulo: 'Lazer e passeios chegou a 80%', texto: 'Você já usou 80% do limite deste planejamento.', lida: false, ref_id: 'plan:pl2:80:180', espaco_id: 'ws_casa', criada_em: T + 'T06:00:00' },
     { id: 'nt9', tipo: 'QUEDA_PRECO', titulo: 'Café torrado e moído 15% mais barato', texto: 'R$ 16,90 em outra loja; você costuma pagar R$ 19,90.', lida: false, ref_id: 'prec:p3:16.9:' + addDays(T, -1), espaco_id: 'ws_casa', criada_em: addDays(T, -1) + 'T06:00:00' },
     { id: 'nt10', tipo: 'PLANEJAMENTO_100', titulo: 'Transporte chegou ao limite', texto: 'O planejamento usou 100% do valor planejado.', lida: true, ref_id: 'plan:pl3:100:750', espaco_id: 'ws_casa', criada_em: addDays(T, -3) + 'T06:00:00' },
+    { id: 'nt12', tipo: 'PLANEJAMENTO_100', titulo: 'Planejamento "Renda do mês": meta batida', texto: 'Você recebeu toda a meta do período.', lida: true, ref_id: 'plan:pl5a:100:12000', espaco_id: 'ws_casa', criada_em: addDays(T, -3) + 'T06:05:00' },
     { id: 'nt11', tipo: 'LANCAMENTO_MEMBRO', titulo: 'Lia Prado lançou uma despesa em Apartamento da praia', texto: 'Condomínio, R$ 650,00.', lida: true, ref_id: 'lanc:u_lia:ws_praia', espaco_id: 'ws_praia', criada_em: addDays(T, -4) + 'T19:10:00' },
   ];
 }
@@ -487,7 +525,7 @@ function painel(S, de, ate) {
     limite_disponivel_total: r2(cs.reduce((s, x) => s + x.disponivel, 0)), a_pagar: fl.a_pagar, a_receber: fl.a_receber,
     patrimonio_liquido: r2(S.recursos.reduce((s, x) => s + saldo(S, x.id), 0)), gasto_no_periodo: gasto, resultado_no_periodo: r2(rec - gasto),
     gasto_por_categoria: Object.entries(porCat).map(([id, v]) => ({ categoria_id: id === '_' ? null : id, nome: id === '_' ? 'Sem categoria' : S.categorias.find((c) => c.id === id).nome, valor: r2(v) })).filter((x) => x.valor > 0).sort((a, b) => b.valor - a.valor),
-    planejamentos: S.planejamentos.filter((p) => p.status === 'ATIVO' && p.data_inicio <= ate && (!p.data_fim || p.data_fim >= de)).map((p) => situacaoPlan(S, p)),
+    planejamentos: S.planejamentos.filter((p) => p.status === 'ATIVO' && p.data_inicio <= ate && (!p.data_fim || p.data_fim >= de) && (!p.serie_id || vigenteP(p))).map((p) => situacaoPlan(S, p)),
   };
 }
 function receitas(S, de, ate, porCat) {
@@ -824,16 +862,44 @@ const R = {
   'recorrencias.gerar': ({ ate }, { S }) => ({ criadas: gerarRec(S, ate || addDays(T, 35)) }),
   'planejamentos.salvar': (p, { S }) => {
     if (!String(p.nome || '').trim()) fail('Dê um nome ao planejamento.');
-    if (!(r2(p.valor_limite) > 0)) fail('Informe o valor planejado.');
-    if (!p.categorias || !p.categorias.length) fail('Escolha ao menos uma categoria.');
     let pl = p.id && S.planejamentos.find((x) => x.id === p.id);
+    if (p.id && !pl) fail('Planejamento não encontrado.');
+    const tipo = pl ? (pl.tipo || 'SAIDA') : (p.tipo === 'ENTRADA' ? 'ENTRADA' : 'SAIDA');
+    if (pl && p.tipo && p.tipo !== tipo) fail('O tipo do planejamento não pode ser alterado.');
+    if (!(r2(p.valor_limite) > 0)) fail(tipo === 'ENTRADA' ? 'Informe a meta.' : 'Informe o limite.');
+    if (!p.categorias || !p.categorias.length) fail('Escolha ao menos uma categoria.');
+    const ct = tipo === 'ENTRADA' ? 'RECEITA' : 'DESPESA';
+    for (const c of p.categorias) {
+      const k = S.categorias.find((x) => x.id === c.categoria_id);
+      if (!k) fail('Categoria não encontrada.');
+      if (k.tipo !== ct) fail(tipo === 'ENTRADA' ? 'A categoria "' + k.nome + '" é de despesa. Planejamento de entrada aceita só categorias de receita.' : 'A categoria "' + k.nome + '" é de receita. Planejamento de gasto aceita só categorias de despesa.');
+    }
     if (pl) checkVer(pl, p.versao);
-    else { pl = { id: nid('pl'), versao: 0 }; S.planejamentos.push(pl); }
-    Object.assign(pl, { nome: p.nome.trim(), data_inicio: p.data_inicio || monthStart(T), data_fim: p.data_fim || null, valor_limite: r2(p.valor_limite), prioridade: p.prioridade || 1, status: p.status || 'ATIVO', categorias: p.categorias.map((c) => ({ categoria_id: c.categoria_id, valor_limite: r2(c.valor_limite) || null, percentual_execucao: c.percentual_execucao || 100 })) });
+    let rc;
+    if (p.recorrencia !== undefined) {
+      if (pl && pl.serie_id && S.planejamentos.some((x) => x.serie_id === pl.serie_id && x.id !== pl.id && x.data_inicio > pl.data_inicio)) fail('Só o período mais recente da série pode mudar a repetição.');
+      if (p.recorrencia === null) rc = null;
+      else {
+        const o = { ...((pl && pl.recorrencia) || {}), ...p.recorrencia };
+        if (!['MENSAL', 'ANUAL', 'SEMANAL', 'DIARIA', 'A_CADA_N_DIAS'].includes(o.periodicidade)) fail('Escolha de quanto em quanto tempo o planejamento se repete.');
+        const n = Math.max(1, Math.floor(Number(o.intervalo) || 1));
+        if (o.periodicidade === 'A_CADA_N_DIAS' && n < 2) fail('Informe a cada quantos dias.');
+        rc = { periodicidade: o.periodicidade, intervalo: n, ate: o.ate || null, status: ['ATIVA', 'PAUSADA', 'ENCERRADA'].includes(o.status) ? o.status : 'ATIVA' };
+      }
+    }
+    const ini = p.data_inicio || (pl && pl.data_inicio) || monthStart(T);
+    let fim = p.data_fim || null;
+    if (!pl && rc) fim = fimPeriodo(ini, rc);
+    if (rc && !fim) fail('Defina o fim do período para repetir.');
+    if (fim && fim < ini) fail('O fim precisa ser depois do início.');
+    if (rc && rc.ate && rc.ate < ini) fail('A data final da repetição precisa ser depois do início.');
+    if (!pl) { pl = { id: nid('pl'), versao: 0, tipo, serie_id: null, recorrencia: null }; S.planejamentos.push(pl); }
+    Object.assign(pl, { nome: p.nome.trim(), data_inicio: ini, data_fim: fim, valor_limite: r2(p.valor_limite), prioridade: p.prioridade || 1, status: p.status || 'ATIVO', categorias: p.categorias.map((c) => ({ categoria_id: c.categoria_id, valor_limite: r2(c.valor_limite) || null, percentual_execucao: c.percentual_execucao || 100 })) });
+    if (rc !== undefined) { pl.recorrencia = rc; if (rc && !pl.serie_id) pl.serie_id = pl.id; }
     pl.versao++;
     return situacaoPlan(S, pl);
   },
-  'planejamentos.listar': (p, { S }) => S.planejamentos.map((x) => situacaoPlan(S, x)),
+  'planejamentos.listar': (p, { S }) => S.planejamentos.filter((x) => (!p.vigentes || vigenteP(x)) && (!p.serie_id || x.serie_id === p.serie_id)).map((x) => situacaoPlan(S, x)),
   'planejamentos.situacao': ({ id }, { S }) => situacaoPlan(S, S.planejamentos.find((x) => x.id === id) || fail('Planejamento não encontrado.')),
   'relatorios.painel': ({ de, ate }, { S }) => painel(S, de || monthStart(T), ate || monthEnd(T)),
   'relatorios.saldos': ({ data }, { S }) => {

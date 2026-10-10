@@ -5,6 +5,7 @@ import { load } from '../api.js';
 import { store, can } from '../store.js';
 import { card, sectionHead, skel, skelCards, skelRows, errorState, segmented, countUp, progress, row, amount, badge, empty, btn, iconBtn, tipoIcon, tip } from '../ui/components.js';
 import { donut, monthBars, gauge, PALETA } from '../ui/charts.js';
+import { planMini } from './planejamentos.js';
 
 async function slot(el, loader, render) {
   try { const d = await loader(); el.replaceChildren(...[].concat(render(d)).filter(Boolean)); }
@@ -90,9 +91,7 @@ export default async function inicio(ctx) {
       r.receitas_por_categoria.length ? h('div', { class: 'list list--flush' }, r.receitas_por_categoria.slice(0, 3).map((c) => row({ lead: h('span', { class: 'tipo-ico tone-in' }, icon('in')), title: c.nome, trail: h('span', { class: 'num money' }, money(c.valor)) }))) : null]);
   };
   loadGasto(); loadSerie(); loadRes();
-  slot(planBody, () => painel(per()), (d) => (d.planejamentos.length ? h('div', { class: 'plan-mini' }, d.planejamentos.slice(0, 4).map((p) => h('a', { class: 'plan-mini-item', href: '#/planejamentos' },
-    h('div', { class: 'plan-mini-top' }, h('span', { class: 'truncate' }, p.nome), p.excedido > 0 ? badge('Excedido ' + money(p.excedido), 'out', 'alert') : h('span', { class: 'num muted money' }, money(p.disponivel) + ' livres')),
-    progress(p.planejado, p.realizado, { label: p.nome })))) : empty({ ic: 'target', title: 'Sem planejamentos ativos', action: can('editor') ? btn('Criar planejamento', { kind: 'secondary', onClick: () => go('/planejamentos') }) : null })));
+  slot(planBody, () => painel(per()), (d) => (d.planejamentos.length ? h('div', { class: 'plan-mini' }, d.planejamentos.slice(0, 4).map(planMini)) : empty({ ic: 'target', title: 'Sem planejamentos ativos', action: can('editor') ? btn('Criar planejamento', { kind: 'secondary', onClick: () => go('/planejamentos') }) : null })));
   slot(fluxBody, () => load('relatorios.fluxo', { ate: monthEnd(addMonths(HOJE, 1)) }), (d) => {
     const its = d.itens.slice(0, 6);
     if (!its.length) return empty({ ic: 'calendar', title: 'Nada a pagar ou receber' });

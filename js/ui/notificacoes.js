@@ -25,6 +25,8 @@ function destino(n) {
   }
 }
 
+const metaBatida = (n) => n.tipo === 'PLANEJAMENTO_100' && /meta batida/i.test(n.titulo || '');
+
 let naoLidas = 0;
 let ultimoFetch = 0;
 const bells = new Set();
@@ -88,7 +90,7 @@ export function openNotifList() {
 
   const notifRow = (n) => h('button', { class: 'notif' + (n.lida ? '' : ' is-unread'), type: 'button', onclick: () => abrir(n), 'aria-label': (n.lida ? '' : 'Não lida. ') + (n.titulo || 'Notificação') + (n.texto ? '. ' + n.texto : '') },
     h('span', { class: 'notif-dot', 'aria-hidden': 'true' }),
-    h('span', { class: 'notif-ico' }, icon(ICO[n.tipo] || 'bell')),
+    metaBatida(n) ? h('span', { class: 'notif-ico tone-in' }, icon('check')) : h('span', { class: 'notif-ico' }, icon(ICO[n.tipo] || 'bell')),
     h('span', { class: 'notif-main' },
       h('span', { class: 'notif-title' }, n.titulo || 'Notificação'),
       n.texto ? h('span', { class: 'notif-text' }, n.texto) : null,
