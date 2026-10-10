@@ -36,6 +36,7 @@ export default async function ajustes(ctx) {
       sectionHead('Outros'),
       h('div', { class: 'set-group' },
         matchMedia('(pointer:fine)').matches ? nav('keyboard', 'Atalhos de teclado', null, () => document.dispatchEvent(new KeyboardEvent('keydown', { key: '?' }))) : null,
+        nav('spaces', 'Espaços arquivados', null, arquivados),
         DEMO ? nav('settings', 'Modo demonstração', 'Simular estados', openDemoPanel, 'xfer') : null,
         nav('logout', 'Sair', null, sair, 'out')))));
 
@@ -91,6 +92,22 @@ export default async function ajustes(ctx) {
       toast(x.acao === 'EXCLUIDO' ? 'Espaço excluído.' : 'Espaço arquivado.', { tone: 'success' });
       (await import('../app.js')).changeSpace(x.proximo_espaco_id);
     } catch (e) { toast(e.message, { tone: 'danger' }); }
+  }
+  async function arquivados() {
+    const s = openSheet({ title: 'Espaços arquivados', content: skelRows(2) });
+    const draw = async () => {
+      try {
+        const ls = await call('ws.arquivados');
+        if (!ls.length) { s.setContent(empty({ ic: 'spaces', title: 'Nenhum espaço arquivado' })); return; }
+        s.setContent(h('div', { class: 'list' }, ls.map((e) => row({ lead: avatar(e.nome), title: e.nome, sub: 'Arquivado', trail: btn('Desarquivar', { kind: 'secondary', size: 'sm', onClick: async (ev) => {
+          ev.stopPropagation();
+          if (!(await confirmSheet({ title: 'Desarquivar “' + e.nome + '”?', confirm: 'Desarquivar', content: h('p', { class: 'muted' }, 'O espaço volta para a sua lista com todos os dados e as pessoas que tinham acesso.') }))) return;
+          try { await call('ws.desarquivar', { espaco_id: e.id }, { rid: uuid() }); await s.close(); toast('Espaço reativado.', { tone: 'success' }); (await import('../app.js')).changeSpace(e.id); }
+          catch (er) { toast(er.message, { tone: 'danger' }); }
+        } }) }))));
+      } catch (e) { s.setContent(errorState(e.message, draw)); }
+    };
+    draw();
   }
   async function pessoas() {
     const s = openSheet({ title: 'Pessoas e papéis', size: 'tall', content: skelRows(3) });

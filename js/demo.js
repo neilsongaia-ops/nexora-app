@@ -582,7 +582,7 @@ export function amostraNota() {
 
 // ---------- rotas ----------
 const ADMIN_WS = new Set(['ws.renomear', 'ws.resumo', 'ws.arquivar', 'membros.listar', 'membros.convidar', 'membros.remover', 'exportar.espaco', 'config.salvar', 'integridade.verificar']);
-const LEITURA_WRITES = new Set(['precos.confirmar', 'denuncias.criar', 'perfil.salvar', 'ws.criar', 'ws.listar']);
+const LEITURA_WRITES = new Set(['precos.confirmar', 'denuncias.criar', 'perfil.salvar', 'ws.criar', 'ws.listar', 'ws.arquivados', 'ws.desarquivar']);
 const RANK = { leitura: 1, editor: 2, admin: 3 };
 const R = {
   'auth.pedir': ({ email }) => { if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email || '')) fail('Confira o e-mail.'); return { enviado: true, validade_min: 10 }; },
@@ -596,7 +596,13 @@ const R = {
   },
   'ws.arquivar': (p, { S }) => {
     const r = R['ws.resumo'](p, { S }); if (!r.outros_espacos) fail('Você precisa ter pelo menos outro espaço ativo antes de arquivar ou excluir este.');
-    DB.spaces = DB.spaces.filter((x) => x.id !== S.id); return { acao: r.vazio ? 'EXCLUIDO' : 'ARQUIVADO', proximo_espaco_id: DB.spaces[0].id };
+    DB.spaces = DB.spaces.filter((x) => x.id !== S.id); if (!r.vazio) DB.arquivados = (DB.arquivados || []).concat(S);
+    return { acao: r.vazio ? 'EXCLUIDO' : 'ARQUIVADO', proximo_espaco_id: DB.spaces[0].id };
+  },
+  'ws.arquivados': () => (DB.arquivados || []).filter((s) => s.papel === 'admin').map((s) => ({ id: s.id, nome: s.nome })),
+  'ws.desarquivar': ({ espaco_id }) => {
+    const s = (DB.arquivados || []).find((x) => x.id === espaco_id && x.papel === 'admin'); if (!s) fail('Espaço arquivado não encontrado (só o admin do espaço pode reativá-lo, e espaços excluídos não voltam).');
+    DB.arquivados = DB.arquivados.filter((x) => x !== s); DB.spaces.push(s); return { id: s.id, nome: s.nome };
   },
   'ws.renomear': ({ nome }, { S }) => { if (!String(nome || '').trim()) fail('Dê um nome ao espaço.'); S.nome = nome.trim(); return { id: S.id, nome: S.nome }; },
   'membros.listar': (p, { S }) => clone(S.membros),
