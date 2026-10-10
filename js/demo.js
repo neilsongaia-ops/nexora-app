@@ -2,7 +2,7 @@
 import { isoLocal, addDays, addMonths, diffDays, r2, sleep, monthStart, monthEnd } from './util.js';
 
 const T = isoLocal(new Date());
-const KEY = 'nx.demo.v7', FK = 'nx.demo.flags';
+const KEY = 'nx.demo.v8', FK = 'nx.demo.flags';
 const sget = (k) => { try { return JSON.parse(sessionStorage.getItem(k)); } catch { return null; } };
 const sset = (k, v) => { try { sessionStorage.setItem(k, JSON.stringify(v)); } catch { /* cheio */ } };
 const flags = Object.assign({ lento: false, falhar: false, conflito: false, expirar: false, offline: false, semBanco: false, vazio: false, contaNova: false }, sget(FK) || {});
@@ -24,8 +24,8 @@ const PAPEL_TXT = { leitura: 'leitura', editor: 'editor', admin: 'administrador'
 const PREF_TIPOS = [
   { tipo: 'LANCAMENTO_MEMBRO', titulo: 'Lançamentos de outras pessoas', descricao: 'Quando alguém do espaço lança uma receita ou despesa.' },
   { tipo: 'FATURA_VENCENDO', titulo: 'Fatura perto de vencer', descricao: 'Até 3 dias antes do vencimento.' },
-  { tipo: 'RESERVA_80', titulo: 'Reserva em 80%', descricao: 'Quando uma reserva chega a 80% do limite.' },
-  { tipo: 'RESERVA_100', titulo: 'Reserva no limite', descricao: 'Quando uma reserva chega a 100% do limite.' },
+  { tipo: 'PLANEJAMENTO_80', titulo: 'Planejamento em 80%', descricao: 'Quando um planejamento chega a 80% do limite.' },
+  { tipo: 'PLANEJAMENTO_100', titulo: 'Planejamento em 100%', descricao: 'Quando um planejamento atinge ou passa o limite.' },
   { tipo: 'QUEDA_PRECO', titulo: 'Queda de preço', descricao: 'Produto que você compra 10% mais barato em outra loja.' },
 ];
 const prefsDe = () => DB.prefsNotif || (DB.prefsNotif = {});
@@ -466,9 +466,9 @@ function seedConvites() {
     { id: 'nt5', tipo: 'CONVITE_RECUSADO', titulo: 'Convite recusado', texto: 'Dido não aceitou seu convite para o espaço Casa.', lida: true, ref_id: 'cv_e4', espaco_id: 'ws_casa', criada_em: addDays(T, -25) + 'T08:00:00' },
     { id: 'nt6', tipo: 'LANCAMENTO_MEMBRO', titulo: 'Rafael Prado fez 3 lançamentos em Casa', texto: 'O último: Farmácia, R$ 48,90.', lida: false, ref_id: 'lanc:u_raf:ws_casa', espaco_id: 'ws_casa', criada_em: T + 'T10:20:00' },
     { id: 'nt7', tipo: 'FATURA_VENCENDO', titulo: 'Fatura Cartão Aurora vence em 2 dias', texto: 'Pague até o vencimento para evitar juros.', lida: false, ref_id: 'fat:r_k1', espaco_id: 'ws_casa', criada_em: T + 'T06:00:00' },
-    { id: 'nt8', tipo: 'RESERVA_80', titulo: 'Lazer e passeios chegou a 80%', texto: 'Você já usou 80% do limite desta reserva.', lida: false, ref_id: 'res:pl2:80:180', espaco_id: 'ws_casa', criada_em: T + 'T06:00:00' },
+    { id: 'nt8', tipo: 'PLANEJAMENTO_80', titulo: 'Lazer e passeios chegou a 80%', texto: 'Você já usou 80% do limite deste planejamento.', lida: false, ref_id: 'plan:pl2:80:180', espaco_id: 'ws_casa', criada_em: T + 'T06:00:00' },
     { id: 'nt9', tipo: 'QUEDA_PRECO', titulo: 'Café torrado e moído 15% mais barato', texto: 'R$ 16,90 em outra loja; você costuma pagar R$ 19,90.', lida: false, ref_id: 'prec:p3:16.9:' + addDays(T, -1), espaco_id: 'ws_casa', criada_em: addDays(T, -1) + 'T06:00:00' },
-    { id: 'nt10', tipo: 'RESERVA_100', titulo: 'Transporte chegou ao limite', texto: 'A reserva usou 100% do valor planejado.', lida: true, ref_id: 'res:pl3:100:750', espaco_id: 'ws_casa', criada_em: addDays(T, -3) + 'T06:00:00' },
+    { id: 'nt10', tipo: 'PLANEJAMENTO_100', titulo: 'Transporte chegou ao limite', texto: 'O planejamento usou 100% do valor planejado.', lida: true, ref_id: 'plan:pl3:100:750', espaco_id: 'ws_casa', criada_em: addDays(T, -3) + 'T06:00:00' },
     { id: 'nt11', tipo: 'LANCAMENTO_MEMBRO', titulo: 'Lia Prado lançou uma despesa em Apartamento da praia', texto: 'Condomínio, R$ 650,00.', lida: true, ref_id: 'lanc:u_lia:ws_praia', espaco_id: 'ws_praia', criada_em: addDays(T, -4) + 'T19:10:00' },
   ];
 }

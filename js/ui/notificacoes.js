@@ -9,7 +9,7 @@ import { btn, badge, empty, errorState, skelRows } from './components.js';
 // Ícone por tipo. Tipo desconhecido usa o sino.
 const ICO = {
   CONVITE_RECEBIDO: 'mail', CONVITE_ACEITO: 'check', CONVITE_RECUSADO: 'x', PAPEL_ALTERADO: 'users',
-  LANCAMENTO_MEMBRO: 'list', FATURA_VENCENDO: 'card', RESERVA_80: 'target', RESERVA_100: 'alert', QUEDA_PRECO: 'down',
+  LANCAMENTO_MEMBRO: 'list', FATURA_VENCENDO: 'card', PLANEJAMENTO_80: 'target', PLANEJAMENTO_100: 'alert', QUEDA_PRECO: 'down',
 };
 
 // Destino do toque por tipo (rota do app). null = só informativa.
@@ -18,8 +18,8 @@ function destino(n) {
   switch (n.tipo) {
     case 'LANCAMENTO_MEMBRO': return '/lancamentos';
     case 'FATURA_VENCENDO': return '/contas';
-    case 'RESERVA_80':
-    case 'RESERVA_100': return '/planejamentos';
+    case 'PLANEJAMENTO_80':
+    case 'PLANEJAMENTO_100': return '/planejamentos';
     case 'QUEDA_PRECO': return ref[0] === 'prec' && ref[1] ? '/compras/produto/' + encodeURIComponent(ref[1]) : '/compras/produtos';
     default: return null;
   }
