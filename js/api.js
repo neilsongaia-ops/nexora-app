@@ -18,8 +18,8 @@ export const READS = new Set(['bootstrap', 'ws.listar', 'membros.listar', 'recur
   'relatorios.resultado', 'relatorios.fluxo', 'relatorios.serie', 'integridade.verificar', 'produtos.listar', 'produtos.porGtin',
   'produtos.imagens', 'lojas.listar', 'lojas.proximas', 'precos.compartilhados', 'precos.historico', 'precos.evolucao',
   'alertas.precos', 'reputacao.minha', 'config.ler', 'listas.listar', 'listas.detalhe', 'sessoes.listar', 'sessoes.detalhe',
-  'comparacao.lista', 'nfce.interpretar', 'admin.painel', 'admin.catalogo', 'admin.denuncias', 'exportar.espaco']);
-const NO_OFFLINE = new Set(['produtos.imagens', 'exportar.espaco', 'nfce.interpretar', 'integridade.verificar']);
+  'comparacao.lista', 'nfce.interpretar', 'admin.painel', 'admin.catalogo', 'admin.denuncias', 'exportar.espaco', 'ws.resumo']);
+const NO_OFFLINE = new Set(['ws.resumo', 'produtos.imagens', 'exportar.espaco', 'nfce.interpretar', 'integridade.verificar']);
 // confirmar preço e denunciar exigem só "leitura", mas são escritas (não usar cache)
 export const isWrite = (a) => !READS.has(a) && !PUBLIC.has(a);
 

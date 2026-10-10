@@ -581,7 +581,7 @@ export function amostraNota() {
 }
 
 // ---------- rotas ----------
-const ADMIN_WS = new Set(['ws.renomear', 'membros.listar', 'membros.convidar', 'membros.remover', 'exportar.espaco', 'config.salvar', 'integridade.verificar']);
+const ADMIN_WS = new Set(['ws.renomear', 'ws.resumo', 'ws.arquivar', 'membros.listar', 'membros.convidar', 'membros.remover', 'exportar.espaco', 'config.salvar', 'integridade.verificar']);
 const LEITURA_WRITES = new Set(['precos.confirmar', 'denuncias.criar', 'perfil.salvar', 'ws.criar', 'ws.listar']);
 const RANK = { leitura: 1, editor: 2, admin: 3 };
 const R = {
@@ -590,6 +590,14 @@ const R = {
   'sistema.iniciar': () => { flags.semBanco = false; sset(FK, flags); return { banco: 'Nexora — Banco de dados (demonstração)', usuario: DB.usuario }; },
   'ws.listar': () => DB.spaces.map((s) => ({ id: s.id, nome: s.nome, papel: s.papel })),
   'ws.criar': ({ nome }) => { if (!String(nome || '').trim()) fail('Dê um nome ao espaço.'); const S = baseSpace(nid('ws'), nome.trim(), 'admin'); S.produtos = []; S.listaItens = []; DB.spaces.push(S); return { id: S.id, nome: S.nome }; },
+  'ws.resumo': (p, { S }) => {
+    const conteudo = {}; ['recursos', 'lancamentos', 'recorrencias', 'planejamentos', 'produtos', 'lojas', 'listas', 'sessoes', 'notas'].forEach((k) => { if ((S[k] || []).length) conteudo[k] = S[k].length; });
+    return { vazio: !Object.keys(conteudo).length, lancamentos: (S.lancamentos || []).length, conteudo, membros: S.membros.length, outros_espacos: DB.spaces.filter((x) => x.id !== S.id).length };
+  },
+  'ws.arquivar': (p, { S }) => {
+    const r = R['ws.resumo'](p, { S }); if (!r.outros_espacos) fail('Você precisa ter pelo menos outro espaço ativo antes de arquivar ou excluir este.');
+    DB.spaces = DB.spaces.filter((x) => x.id !== S.id); return { acao: r.vazio ? 'EXCLUIDO' : 'ARQUIVADO', proximo_espaco_id: DB.spaces[0].id };
+  },
   'ws.renomear': ({ nome }, { S }) => { if (!String(nome || '').trim()) fail('Dê um nome ao espaço.'); S.nome = nome.trim(); return { id: S.id, nome: S.nome }; },
   'membros.listar': (p, { S }) => clone(S.membros),
   'membros.convidar': ({ email, papel }, { S }) => { if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email || '')) fail('Confira o e-mail.'); if (!RANK[papel]) fail('Escolha o papel.'); const ex = S.membros.find((m) => m.email === email); if (ex) ex.papel = papel; else S.membros.push({ usuario_id: nid('u'), email, nome: '', papel }); return { email, papel }; },

@@ -28,7 +28,8 @@ export default async function ajustes(ctx) {
         admin ? nav('users', 'Pessoas e papéis', null, pessoas) : row({ lead: h('span', { class: 'tipo-ico' }, icon('users')), title: 'Seu papel', trail: badge(PAPEL[b.espaco.papel], b.espaco.papel === 'leitura' ? 'neutral' : 'in') }),
         nav('tag', 'Categorias', `${b.categorias.length} categorias`, categorias),
         admin ? nav('download', 'Exportar dados do espaço', 'Arquivo JSON', exportar) : null,
-        admin ? nav('shield', 'Verificar integridade', null, integridade) : null)),
+        admin ? nav('shield', 'Verificar integridade', null, integridade) : null,
+        admin ? nav('x', 'Arquivar ou excluir este espaço', null, arquivarEspaco, 'out') : null)),
     h('div', { class: 'sec' },
       sectionHead('Preços e deslocamento'), cfgEl,
       sectionHead('Minha reputação'), repEl(),
@@ -72,6 +73,24 @@ export default async function ajustes(ctx) {
     const bt = btn('Salvar', { size: 'lg', full: true });
     bt.onclick = async () => { bt.disabled = true; try { await call('ws.renomear', { nome: nome.trim() }, { rid: uuid() }); await s.close(); toast('Espaço renomeado.', { tone: 'success' }); await loadBoot(); ctx.refresh(); } catch (e) { err.show(e.message); } finally { bt.disabled = false; } };
     const s = openSheet({ title: 'Renomear espaço', content: [err, f], footer: bt });
+  }
+  async function arquivarEspaco() {
+    let r;
+    try { r = await call('ws.resumo'); } catch (e) { toast(e.message, { tone: 'danger' }); return; }
+    if (!r.outros_espacos) { toast('Este é o seu único espaço. Crie outro antes de arquivar ou excluir este.', { tone: 'danger' }); return; }
+    const outras = r.membros - 1, quem = outras > 0 ? ` e para as outras ${outras} ${outras === 1 ? 'pessoa' : 'pessoas'}` : '';
+    const ok = await confirmSheet({
+      title: (r.vazio ? 'Excluir “' : 'Arquivar “') + b.espaco.nome + '”?', confirm: r.vazio ? 'Excluir espaço' : 'Arquivar espaço', tone: 'danger',
+      content: h('p', { class: 'muted' }, r.vazio
+        ? `Este espaço está vazio (sem lançamentos, contas ou produtos). Ele será excluído e deixará de aparecer para você${quem}.`
+        : `Este espaço tem ${r.lancamentos} ${r.lancamentos === 1 ? 'lançamento' : 'lançamentos'} e outros dados. Ele será arquivado: deixa de aparecer para você${quem}, mas os dados continuam guardados e nada é apagado.`),
+    });
+    if (!ok) return;
+    try {
+      const x = await call('ws.arquivar', {}, { rid: uuid() });
+      toast(x.acao === 'EXCLUIDO' ? 'Espaço excluído.' : 'Espaço arquivado.', { tone: 'success' });
+      (await import('../app.js')).changeSpace(x.proximo_espaco_id);
+    } catch (e) { toast(e.message, { tone: 'danger' }); }
   }
   async function pessoas() {
     const s = openSheet({ title: 'Pessoas e papéis', size: 'tall', content: skelRows(3) });
