@@ -9,7 +9,7 @@ import { btn, badge, empty, errorState, skelRows } from './components.js';
 // Ícone por tipo. Tipo desconhecido usa o sino.
 const ICO = {
   CONVITE_RECEBIDO: 'mail', CONVITE_ACEITO: 'check', CONVITE_RECUSADO: 'x', PAPEL_ALTERADO: 'users',
-  LANCAMENTO_MEMBRO: 'list', FATURA_VENCENDO: 'card', PLANEJAMENTO_80: 'target', PLANEJAMENTO_100: 'alert', QUEDA_PRECO: 'down',
+  LANCAMENTO_MEMBRO: 'list', FATURA_VENCENDO: 'card', PLANEJAMENTO_80: 'target', PLANEJAMENTO_100: 'alert', QUEDA_PRECO: 'down', CHEQUE_ESPECIAL: 'alert',
 };
 
 // Destino do toque por tipo (rota do app). null = só informativa.
@@ -20,12 +20,14 @@ function destino(n) {
     case 'FATURA_VENCENDO': return '/contas';
     case 'PLANEJAMENTO_80':
     case 'PLANEJAMENTO_100': return '/planejamentos';
+    case 'CHEQUE_ESPECIAL': return ref[0] === 'cheq' && ref[1] ? '/contas/' + encodeURIComponent(ref[1]) : '/contas';
     case 'QUEDA_PRECO': return ref[0] === 'prec' && ref[1] ? '/compras/produto/' + encodeURIComponent(ref[1]) : '/compras/produtos';
     default: return null;
   }
 }
 
 const metaBatida = (n) => n.tipo === 'PLANEJAMENTO_100' && /meta batida/i.test(n.titulo || '');
+const chequeForte = (n) => n.tipo === 'CHEQUE_ESPECIAL' && /acima do limite|esgotado/i.test(n.titulo || '');
 
 let naoLidas = 0;
 let ultimoFetch = 0;
@@ -90,7 +92,7 @@ export function openNotifList() {
 
   const notifRow = (n) => h('button', { class: 'notif' + (n.lida ? '' : ' is-unread'), type: 'button', onclick: () => abrir(n), 'aria-label': (n.lida ? '' : 'Não lida. ') + (n.titulo || 'Notificação') + (n.texto ? '. ' + n.texto : '') },
     h('span', { class: 'notif-dot', 'aria-hidden': 'true' }),
-    metaBatida(n) ? h('span', { class: 'notif-ico tone-in' }, icon('check')) : h('span', { class: 'notif-ico' }, icon(ICO[n.tipo] || 'bell')),
+    metaBatida(n) ? h('span', { class: 'notif-ico tone-in' }, icon('check')) : h('span', { class: 'notif-ico' + (chequeForte(n) ? ' tone-out' : '') }, icon(ICO[n.tipo] || 'bell')),
     h('span', { class: 'notif-main' },
       h('span', { class: 'notif-title' }, n.titulo || 'Notificação'),
       n.texto ? h('span', { class: 'notif-text' }, n.texto) : null,

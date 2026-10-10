@@ -1,4 +1,4 @@
-// Contas e cartões: saldos atual/projetado, cartões com medidor de limite, faturas, pagamento total/parcial
+// Contas e cartões: saldos atual/projetado, cheque especial e rendimento, cartões com medidor de limite, faturas, pagamento, histórico de configuração
 import { h, money, dmy, relDate, HOJE, uuid, emit, monthLong, r2 } from '../util.js';
 import { icon } from '../icons.js';
 import { call, load } from '../api.js';
@@ -9,6 +9,8 @@ import { card, sectionHead, skelCards, skelRows, errorState, empty, btn, iconBtn
 import { gauge } from '../ui/charts.js';
 import { infinite } from '../ui/gestures.js';
 import { lancRow } from './lancAcoes.js';
+import { contaResumo, contaDetalhe, avisoLimite } from '../ui/conta.js';
+import { histSecao } from '../ui/historico.js';
 
 const TIPO_CONTA = [{ value: 'CORRENTE', label: 'Corrente' }, { value: 'POUPANCA', label: 'Poupança' }, { value: 'PAGAMENTO', label: 'Conta de pagamento' }, { value: 'INVESTIMENTO', label: 'Investimento' }];
 const BANDEIRAS = ['Visa', 'Mastercard', 'Elo', 'Hipercard', 'American Express', 'Outra'].map((b) => ({ value: b, label: b }));
@@ -36,7 +38,8 @@ function contaCard(c) {
   return h('a', { class: 'acct-card', href: '#/contas/' + c.id },
     h('span', { class: 'acct-card-top' }, h('span', { class: 'tipo-ico' }, icon(c.tipo === 'CARTEIRA' ? 'coin' : 'wallet')), h('span', { class: 'acct-card-name truncate' }, c.nome), icon('chevR', 'muted')),
     h('span', { class: 'acct-card-v num' + (c.saldo_atual < 0 ? ' tone-out' : '') }, money(c.saldo_atual)),
-    diff ? h('span', { class: 'acct-card-sub' }, 'Projetado ', h('strong', { class: 'num' }, money(c.saldo_projetado)), h('span', { class: 'num tone-' + (diff > 0 ? 'in' : 'out') }, ' ' + money(diff, { sign: true }))) : h('span', { class: 'acct-card-sub' }, c.instituicao || ''));
+    diff ? h('span', { class: 'acct-card-sub' }, 'Projetado ', h('strong', { class: 'num' }, money(c.saldo_projetado)), h('span', { class: 'num tone-' + (diff > 0 ? 'in' : 'out') }, ' ' + money(diff, { sign: true }))) : h('span', { class: 'acct-card-sub' }, c.instituicao || ''),
+    contaResumo(c));
 }
 function cartaoCard(k) {
   const r = store.recs.get(k.id) || {};
@@ -64,13 +67,16 @@ async function detalhe(ctx, id) {
   if (r.tipo === 'CARTAO') return detalheCartao(ctx, r);
   const head = h('div', { class: 'hero hero--sm' }, skelCards(1));
   const list = h('div', { class: 'list list--grouped' });
-  view.append(head, sectionHead('Movimentações'), list);
+  const chq = h('div', { class: 'chq-slot' }, r.cheque_especial || Number(r.taxa_rendimento) > 0 ? skelCards(1) : null);
+  view.append(head, chq, histSecao(r), sectionHead('Movimentações'), list);
   load('relatorios.saldos', {}).then((s) => {
     const c = s.contas.find((x) => x.id === id) || { saldo_atual: 0, saldo_projetado: 0 };
     head.replaceChildren(h('span', { class: 'hero-k' }, r.instituicao ? r.instituicao + (r.agencia ? ` · ag. ${r.agencia}` : '') + (r.numero ? ` · ${r.numero}` : '') : r.tipo === 'CARTEIRA' ? 'Carteira' : 'Conta'),
       h('span', { class: 'hero-v num' + (c.saldo_atual < 0 ? ' tone-out' : '') }, money(c.saldo_atual)),
-      h('span', { class: 'hero-sub' }, 'Projetado ', h('strong', { class: 'num' }, money(c.saldo_projetado)), tip('Inclui lançamentos futuros que ainda não aconteceram.')));
-  }).catch((e) => head.replaceChildren(errorState(e.message, ctx.refresh)));
+      h('span', { class: 'hero-sub' }, 'Projetado ', h('strong', { class: 'num' }, money(c.saldo_projetado)), tip('Inclui lançamentos futuros que ainda não aconteceram.')),
+      c.cheque_especial && c.cheque_especial.acima_do_limite ? h('span', { class: 'hero-sub' }, h('span', { class: 'badge tone-out is-strong' }, icon('alert'), 'Acima do limite')) : '');
+    chq.replaceChildren(contaDetalhe(c, r) || '');
+  }).catch((e) => { head.replaceChildren(errorState(e.message, ctx.refresh)); chq.replaceChildren(); });
   let last = null, g = null;
   const inf = infinite({ container: list, skeleton: () => skelRows(4), load: (offset, limite) => call('lancamentos.listar', { recurso_id: id, offset, limite }),
     render: (its) => its.forEach((l) => { if (l.data_evento !== last) { last = l.data_evento; g = h('div', { class: 'day' }, h('h3', { class: 'day-h' }, relDate(l.data_evento)[0].toUpperCase() + relDate(l.data_evento).slice(1))); list.append(g); } g.append(lancRow(l)); }),
@@ -84,7 +90,7 @@ async function detalheCartao(ctx, r) {
   const fatEl = h('div', { class: 'list' }, skelRows(4));
   let filtro = 'abertas';
   const seg = segmented([{ value: 'abertas', label: 'A pagar' }, { value: 'todas', label: 'Todas' }], { value: filtro, aria: 'Faturas', cls: 'seg--sm', onChange: (v) => { filtro = v; drawFat(); } });
-  view.append(top, h('section', { class: 'sec' }, sectionHead('Faturas', seg), fatEl));
+  view.append(top, h('section', { class: 'sec' }, sectionHead('Faturas', seg), fatEl), histSecao(r));
   let fats = [];
   const drawFat = () => {
     const f = filtro === 'todas' ? fats : fats.filter((x) => x.status !== 'PAGA' && x.status !== 'CANCELADA');
@@ -155,7 +161,7 @@ export function pagarFatura(f, k) {
       await s.close();
       toast(valor < f.valor_em_aberto ? 'Pagamento parcial registrado.' : 'Fatura paga.', { tone: 'success' });
       emit('dados');
-    } catch (e) { err.show(e.message); } finally { b.disabled = false; b.removeAttribute('aria-busy'); }
+    } catch (e) { err.show(e.message); if (e.codigo === 'LIMITE_CONTA') avisoLimite(e.message); } finally { b.disabled = false; b.removeAttribute('aria-busy'); }
   };
   const s = openSheet({ title: 'Pagar fatura', content: [h('div', { class: 'pay-head' }, h('span', { class: 'muted' }, k.nome), h('span', { class: 'amount num is-2xl' }, money(f.valor_em_aberto)), h('span', { class: 'pay-note' }, badge('Movimentação entre contas', 'xfer', 'swap'), tip('Pagar a fatura não é uma nova despesa: as compras já contaram quando foram feitas.'))), err, segm, wrap, cf, df], footer: b });
 }
@@ -166,9 +172,23 @@ async function inativar(r, ctx) {
 }
 
 export function openRecursoForm({ tipo = 'CONTA', edit } = {}) {
-  const st = edit ? { ...edit } : { tipo, nome: '', tipo_conta: 'CORRENTE', instituicao: '', agencia: '', numero: '', saldo_inicial: 0, data_saldo_inicial: HOJE, limite: 0, dia_fechamento: 1, dia_vencimento: 10, bandeira: null, final: '', regra_fechamento: 'INCLUSIVO', recurso_pagamento_id: (recursosAtivos(['CONTA'])[0] || {}).id || null, anuidade: 0, taxa_juros: 0 };
+  const st = edit ? { ...edit, cheque_on: !!edit.cheque_especial, limite_cheque: Number(edit.limite_cheque) || 0, taxa_rendimento: Number(edit.taxa_rendimento) || 0, juros_cheque: Number(edit.juros_cheque) || 0, rendimento_unidade: edit.rendimento_unidade || 'MES', juros_cheque_unidade: edit.juros_cheque_unidade || 'MES' }
+    : { taxa_rendimento: 0, rendimento_unidade: 'MES', cheque_on: false, limite_cheque: 0, juros_cheque: 0, juros_cheque_unidade: 'MES', tipo, nome: '', tipo_conta: 'CORRENTE', instituicao: '', agencia: '', numero: '', saldo_inicial: 0, data_saldo_inicial: HOJE, limite: 0, dia_fechamento: 1, dia_vencimento: 10, bandeira: null, final: '', regra_fechamento: 'INCLUSIVO', recurso_pagamento_id: (recursosAtivos(['CONTA'])[0] || {}).id || null, anuidade: 0, taxa_juros: 0 };
   const rid = uuid(), err = formError();
   let nomeF;
+  const taxaF = (label, key) => textField(label, { value: st[key] ? String(st[key]).replace('.', ',') : '', inputmode: 'decimal', placeholder: '0', maxlength: 7, onInput: (v) => { const x = Number(String(v).replace(',', '.')); st[key] = x >= 0 ? x : 0; } });
+  const unidF = (key, aria) => h('div', { class: 'field' }, h('div', { class: 'field-top' }, h('span', { class: 'field-label' }, 'Período')), segmented([{ value: 'MES', label: 'Ao mês' }, { value: 'ANO', label: 'Ao ano' }], { value: st[key] || 'MES', aria, onChange: (v) => { st[key] = v; } }));
+  const secao = (ic, titulo, dica, ...kids) => { const id = 'fs' + uuid().slice(0, 8); return h('div', { class: 'form-sec', role: 'group', 'aria-labelledby': id }, h('div', { class: 'form-sec-h' }, icon(ic), h('span', { id }, titulo), tip(dica)), ...kids); };
+  const rendSec = () => secao('piggy', 'Rendimento', 'Opcional. Serve para estimar quanto a conta rende no mês; o app não lança o rendimento.', h('div', { class: 'grid-2' }, taxaF('Taxa (%)', 'taxa_rendimento'), unidF('rendimento_unidade', 'Período da taxa de rendimento')));
+  const chqSec = () => {
+    const hint = h('p', { class: 'chq-hint', 'aria-live': 'polite' });
+    const upd = () => hint.replaceChildren(icon(!st.cheque_on ? 'ban' : st.limite_cheque > 0 ? 'shield' : 'lock'), h('span', {}, !st.cheque_on ? 'O app não confere o saldo desta conta.' : st.limite_cheque > 0 ? 'Pode ficar até ' + money(st.limite_cheque) + ' negativa.' : 'R$ 0,00: sem cheque especial, não fica negativa.'));
+    const limF = moneyField('Limite total', { value: st.limite_cheque, onChange: (v) => { st.limite_cheque = v; upd(); } });
+    const body = h('div', { class: 'form-sec-body', hidden: !st.cheque_on }, limF, h('div', { class: 'grid-2' }, taxaF('Juros (%)', 'juros_cheque'), unidF('juros_cheque_unidade', 'Período dos juros do cheque especial')));
+    const seg = segmented([{ value: 'off', label: 'Não informar' }, { value: 'on', label: 'Informar limite' }], { value: st.cheque_on ? 'on' : 'off', aria: 'Cheque especial', onChange: (v) => { st.cheque_on = v === 'on'; body.hidden = !st.cheque_on; upd(); if (st.cheque_on) setTimeout(() => limF.input.focus(), 50); } });
+    upd();
+    return secao('shield', 'Cheque especial', 'Não informar: sem controle, como hoje. Informar: o app recusa saídas acima de saldo + limite, como o banco. R$ 0,00 = conta sem cheque especial.', seg, hint, body);
+  };
   const build = () => {
     const out = [err];
     if (!edit) out.push(segmented([{ value: 'CONTA', label: 'Conta', icon: 'wallet' }, { value: 'CARTEIRA', label: 'Carteira', icon: 'coin' }, { value: 'CARTAO', label: 'Cartão', icon: 'card' }], { value: st.tipo, aria: 'Tipo', onChange: (v) => { st.tipo = v; s.setContent(build()); } }));
@@ -177,6 +197,7 @@ export function openRecursoForm({ tipo = 'CONTA', edit } = {}) {
     if (st.tipo === 'CONTA') out.push(pickField('Tipo de conta', { value: st.tipo_conta, items: TIPO_CONTA, onChange: (v) => { st.tipo_conta = v; } }), textField('Instituição', { value: st.instituicao || '', onInput: (v) => { st.instituicao = v; } }),
       h('div', { class: 'grid-2' }, textField('Agência', { value: st.agencia || '', inputmode: 'numeric', onInput: (v) => { st.agencia = v; } }), textField('Número', { value: st.numero || '', onInput: (v) => { st.numero = v; } })));
     if (st.tipo !== 'CARTAO' && !edit) out.push(h('div', { class: 'grid-2' }, moneyField('Saldo inicial', { value: st.saldo_inicial, tipText: 'Depois disso o saldo é sempre calculado pelos lançamentos.', onChange: (v) => { st.saldo_inicial = v; } }), dateField('Em', { value: st.data_saldo_inicial, max: HOJE, onChange: (v) => { st.data_saldo_inicial = v; } })));
+    if (st.tipo === 'CONTA') out.push(rendSec(), chqSec());
     if (st.tipo === 'CARTAO') out.push(
       moneyField('Limite', { value: st.limite, onChange: (v) => { st.limite = v; } }),
       h('div', { class: 'grid-2' }, h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Fecha dia'), stepper({ value: st.dia_fechamento, min: 1, max: 31, label: 'Dia de fechamento', onChange: (v) => { st.dia_fechamento = v; } })),
@@ -195,6 +216,13 @@ export function openRecursoForm({ tipo = 'CONTA', edit } = {}) {
     try {
       const keys = st.tipo === 'CARTAO' ? ['limite', 'dia_fechamento', 'dia_vencimento', 'instituicao', 'bandeira', 'final', 'regra_fechamento', 'recurso_pagamento_id', 'anuidade', 'taxa_juros'] : st.tipo === 'CONTA' ? ['tipo_conta', 'instituicao', 'agencia', 'numero'] : [];
       const p = { nome: st.nome.trim() }; keys.forEach((k) => { if (st[k] !== '' && st[k] != null) p[k] = st[k]; });
+      if (st.tipo === 'CONTA') {
+        if (edit) Object.assign(p, { taxa_rendimento: st.taxa_rendimento || 0, rendimento_unidade: st.rendimento_unidade || 'MES', limite_cheque: st.cheque_on ? r2(st.limite_cheque) : null, juros_cheque: st.juros_cheque || 0, juros_cheque_unidade: st.juros_cheque_unidade || 'MES' });
+        else {
+          if (st.taxa_rendimento > 0) Object.assign(p, { taxa_rendimento: st.taxa_rendimento, rendimento_unidade: st.rendimento_unidade || 'MES' });
+          if (st.cheque_on) Object.assign(p, { limite_cheque: r2(st.limite_cheque), juros_cheque: st.juros_cheque || 0, juros_cheque_unidade: st.juros_cheque_unidade || 'MES' });
+        }
+      }
       if (edit) await call('recursos.atualizar', { id: edit.id, versao: edit.versao, ...p }, { rid });
       else await call('recursos.criar', { tipo: st.tipo, ...p, ...(st.tipo !== 'CARTAO' ? { saldo_inicial: st.saldo_inicial, data_saldo_inicial: st.data_saldo_inicial } : {}) }, { rid });
       await s.close(); toast(edit ? 'Alterações salvas.' : 'Adicionado.', { tone: 'success' }); emit('dados');

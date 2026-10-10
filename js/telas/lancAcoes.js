@@ -8,6 +8,7 @@ import { toast, undoable } from '../ui/toast.js';
 import { swipeable, longPress } from '../ui/gestures.js';
 import { row, amount, tipoIcon, statusBadge, badge, kv, skelRows, errorState, btn, textField, dateField, formError, TIPO, sectionHead, tip } from '../ui/components.js';
 import { openLancForm, categoriaItems } from './lancForm.js';
+import { avisoLimite, podeCobranca } from '../ui/conta.js';
 
 const futuro = (l) => ['PLANEJADO', 'PENDENTE'].includes(l.status);
 const estornavel = (l) => l.status === 'EFETIVADO' && !['ESTORNO', 'SALDO_INICIAL', 'PAGAMENTO_FATURA'].includes(l.origem);
@@ -58,10 +59,17 @@ export function openLancMenu(l) {
   });
 }
 
-export async function efetivar(l, data) {
+export async function efetivar(l, data, cobranca) {
   const t = toast('Efetivando…', { ico: 'clock', duration: 8000 });
-  try { await call('lancamentos.efetivar', data ? { id: l.id, data } : { id: l.id }, { rid: uuid() }); t(); toast('Efetivado. Já conta no saldo.', { tone: 'success' }); emit('dados'); }
-  catch (e) { t(); toast(e.message, { tone: 'danger' }); }
+  const p = { id: l.id };
+  if (data) p.data = data;
+  if (cobranca) p.cobranca_banco = true;
+  try { await call('lancamentos.efetivar', p, { rid: uuid() }); t(); toast('Efetivado. Já conta no saldo.', { tone: 'success' }); emit('dados'); }
+  catch (e) {
+    t();
+    if (e.codigo === 'LIMITE_CONTA') { if (await avisoLimite(e.message, { podeCobranca: !cobranca && !l.cobranca_banco && podeCobranca(l.tipo, l.recurso_id) })) efetivar(l, data, true); }
+    else toast(e.message, { tone: 'danger' });
+  }
 }
 export async function cancelar(l) {
   const r = await undoable(`“${l.descricao}” será cancelado`, () => call('lancamentos.cancelar', { id: l.id }, { rid: uuid() }));
@@ -76,7 +84,7 @@ export function estornar(l) {
   b.onclick = async () => {
     if (!motivo.trim()) { f.setError('Conte o motivo'); f.input.focus(); return; }
     await s.close();
-    const r = await undoable('Estorno de ' + money(l.valor_total) + ' em instantes', () => call('lancamentos.estornar', { id: l.id, motivo: motivo.trim(), data }, { rid: uuid() }));
+    const r = await undoable('Estorno de ' + money(l.valor_total) + ' em instantes', () => call('lancamentos.estornar', { id: l.id, motivo: motivo.trim(), data }, { rid: uuid() }).catch(async (e) => { if (e.codigo !== 'LIMITE_CONTA') throw e; await avisoLimite(e.message); return null; }));
     if (r) { toast('Estornado. O original foi preservado.', { tone: 'success' }); emit('dados'); }
   };
   const s = openSheet({ title: 'Estornar lançamento', content: [h('div', { class: 'menu-head' }, tipoIcon(l.tipo, 'is-lg'), h('div', {}, h('div', { class: 'row-title' }, l.descricao), amount(l.valor_total, { tipo: l.tipo }))), err, f, d], footer: b });
@@ -112,7 +120,7 @@ export async function openLancDetail(id) {
     const ed = can('editor');
     const head = h('div', { class: 'det-head' }, tipoIcon(d.tipo, 'is-xl'), h('div', { class: 'det-head-txt' }, h('h3', { class: 'det-title' }, d.descricao),
       amount(d.valor_total, { tipo: d.tipo, cls: 'is-2xl', strike: ['CANCELADO', 'ESTORNADO'].includes(d.status) }),
-      h('div', { class: 'det-badges' }, statusBadge(d.status), d.tipo === 'TRANSFERENCIA' ? badge(d.origem === 'PAGAMENTO_FATURA' ? 'Pagamento de fatura' : 'Não é receita nem despesa', 'xfer', 'swap') : null, d.origem === 'ESTORNO' ? badge('Estorno', 'muted', 'undo') : null, d.origem === 'RECORRENCIA' ? badge('Recorrente', 'neutral', 'repeat') : null)));
+      h('div', { class: 'det-badges' }, statusBadge(d.status), d.tipo === 'TRANSFERENCIA' ? badge(d.origem === 'PAGAMENTO_FATURA' ? 'Pagamento de fatura' : 'Não é receita nem despesa', 'xfer', 'swap') : null, d.origem === 'ESTORNO' ? badge('Estorno', 'muted', 'undo') : null, d.origem === 'RECORRENCIA' ? badge('Recorrente', 'neutral', 'repeat') : null, d.cobranca_banco ? badge('Cobrança do banco', 'neutral', 'receipt') : null)));
     const info = h('div', { class: 'kv-list' },
       kv('Data', dmy(d.data_evento) + ' · ' + relDate(d.data_evento)),
       d.recurso_id ? kv(d.tipo === 'ENTRADA' ? 'Recebido em' : 'Pago com', recNome(d.recurso_id)) : null,

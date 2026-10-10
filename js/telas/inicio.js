@@ -6,6 +6,7 @@ import { store, can } from '../store.js';
 import { card, sectionHead, skel, skelCards, skelRows, errorState, segmented, countUp, progress, row, amount, badge, empty, btn, iconBtn, tipoIcon, tip } from '../ui/components.js';
 import { donut, monthBars, gauge, PALETA } from '../ui/charts.js';
 import { planMini } from './planejamentos.js';
+import { ondeExtra } from '../ui/conta.js';
 
 async function slot(el, loader, render) {
   try { const d = await loader(); el.replaceChildren(...[].concat(render(d)).filter(Boolean)); }
@@ -62,9 +63,10 @@ export default async function inicio(ctx) {
       ['A pagar', d.a_pagar, 'out', 'out', '/agenda'], ['A receber', d.a_receber, 'in', 'in', '/agenda'],
       ['Comprometido nos cartões', d.comprometido_nos_cartoes, '', 'card', '/contas'], ['Limite disponível', d.limite_disponivel_total, '', 'card', '/contas']];
     tiles.replaceChildren(...[tP, tR, tC, tL].map(([l, val, tone, ic, to]) => h('a', { class: 'tile', href: '#' + to }, h('span', { class: 'tile-k' }, icon(ic, tone ? 'tone-' + tone : ''), l), h('span', { class: 'tile-v num money' + (tone ? ' tone-' + tone : '') }, money(val)))));
-    onde.replaceChildren(...d.onde_esta.map((r) => h('a', { class: 'acct', href: '#/contas/' + r.recurso_id }, h('span', { class: 'acct-k' }, icon(r.tipo === 'CARTEIRA' ? 'coin' : 'wallet'), h('span', { class: 'truncate' }, r.nome)), h('span', { class: 'acct-v num money' + (r.saldo < 0 ? ' tone-out' : '') }, money(r.saldo)))),
+    onde.replaceChildren(...d.onde_esta.map((r) => h('a', { class: 'acct', href: '#/contas/' + r.recurso_id, dataset: { id: r.recurso_id } }, h('span', { class: 'acct-k' }, icon(r.tipo === 'CARTEIRA' ? 'coin' : 'wallet'), h('span', { class: 'truncate' }, r.nome)), h('span', { class: 'acct-v num money' + (r.saldo < 0 ? ' tone-out' : '') }, money(r.saldo)))),
       ...d.cartoes.map((k) => h('a', { class: 'acct acct--card', href: '#/contas/' + k.recurso_id }, h('span', { class: 'acct-k' }, icon('card'), h('span', { class: 'truncate' }, k.nome)),
         h('span', { class: 'acct-v num money' }, money(k.comprometido)), k.limite ? h('span', { class: 'acct-bar', style: { '--p': String(Math.min(1, k.comprometido / k.limite)) } }) : h('span', { class: 'acct-sub' }, 'Sem limite definido'))));
+    load('relatorios.saldos', {}).then((s) => (s.contas || []).forEach((c) => { const el = onde.querySelector('[data-id="' + CSS.escape(c.id) + '"]'); if (el) el.append(...ondeExtra(c)); })).catch(() => {});
     return [h('span', { class: 'hero-k' }, 'Quanto tenho'), v, h('span', { class: 'hero-sub' }, 'Patrimônio líquido ', h('strong', { class: 'num money' }, money(d.patrimonio_liquido)), tip('Tudo o que você tem menos o que deve nos cartões.'))];
   });
 

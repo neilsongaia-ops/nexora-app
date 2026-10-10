@@ -6,6 +6,7 @@ import { store, recursosAtivos, categoriasDe, saldoDe, can } from '../store.js';
 import { openSheet } from '../ui/sheet.js';
 import { toast, successBurst } from '../ui/toast.js';
 import { segmented, moneyField, textField, pickField, dateField, stepper, btn, formError, badge, tip, TIPO, kv } from '../ui/components.js';
+import { cobrancaField, avisoLimite } from '../ui/conta.js';
 
 export function recursoItems({ semCartao, soCartao } = {}) {
   const G = { CONTA: 'Contas', CARTEIRA: 'Carteiras', CARTAO: 'Cartões' };
@@ -29,8 +30,8 @@ export function openLancForm({ tipo = 'SAIDA', initial, edit, onSaved } = {}) {
   const st = edit ? {
     tipo: edit.tipo, valor: edit.valor_bruto, descricao: edit.descricao, recurso_id: edit.recurso_id, origem_id: edit.origem_id, destino_id: edit.destino_id, categoria_id: edit.categoria_id,
     data: edit.data_evento, status: edit.status, parcelas: edit.parcelas_total || 1, descontos: edit.descontos, acrescimos: edit.acrescimos, encargos: edit.encargos,
-    itens: edit.itens.map((i) => ({ ...i })), rid: uuid(),
-  } : Object.assign({ tipo, valor: 0, descricao: '', recurso_id: null, origem_id: null, destino_id: null, categoria_id: null, data: HOJE, status: 'EFETIVADO', parcelas: 1, descontos: 0, acrescimos: 0, encargos: 0, itens: [], rid: uuid() }, initial || {}, saved || {});
+    itens: edit.itens.map((i) => ({ ...i })), cobranca_banco: !!edit.cobranca_banco, rid: uuid(),
+  } : Object.assign({ tipo, valor: 0, descricao: '', recurso_id: null, origem_id: null, destino_id: null, categoria_id: null, data: HOJE, status: 'EFETIVADO', parcelas: 1, descontos: 0, acrescimos: 0, encargos: 0, itens: [], cobranca_banco: false, rid: uuid() }, initial || {}, saved || {});
   if (!edit && !st.recurso_id) { const def = recursosAtivos(['CONTA'])[0]; if (def && !initial) st.recurso_id = def.id; }
   const futuro = edit && ['PLANEJADO', 'PENDENTE'].includes(edit.status);
   const valorEditavel = !edit || (futuro && !edit.itens.length && !(edit.parcelas || []).length);
@@ -38,6 +39,7 @@ export function openLancForm({ tipo = 'SAIDA', initial, edit, onSaved } = {}) {
   const persist = debounce(() => { if (!edit) dr.save(st); }, 300);
   const err = formError();
   const fields = {};
+  const isContaSaida = () => { const r = store.recs.get(st.recurso_id); return st.tipo === 'SAIDA' && r && r.tipo === 'CONTA'; };
   const isCard = () => { const r = store.recs.get(st.recurso_id); return st.tipo === 'SAIDA' && r && r.tipo === 'CARTAO'; };
   const total = () => r2(st.valor - st.descontos + st.acrescimos + st.encargos);
   const totalEl = h('span', { class: 'num' });
@@ -81,6 +83,7 @@ export function openLancForm({ tipo = 'SAIDA', initial, edit, onSaved } = {}) {
       fields.cat = pickField('Categoria', { value: st.categoria_id, items: () => categoriaItems(st.tipo === 'ENTRADA' ? 'RECEITA' : 'DESPESA'), placeholder: 'Sem categoria', ic: 'tag', display: (v, it) => (it ? (it.sub ? it.sub + ' › ' + it.label : it.label) : 'Sem categoria'), onChange: (v) => { st.categoria_id = v; persist(); } });
       out.push(fields.cat);
     }
+    if (isContaSaida() && (!edit || !['CANCELADO', 'ESTORNADO'].includes(edit.status))) out.push(cobrancaField(st.cobranca_banco, (v) => { st.cobranca_banco = v; persist(); }));
     if (valorEditavel) {
       fields.data = dateField('Data', { value: st.data, onChange: (v) => { st.data = v; persist(); rebuild(); } });
       const row = [fields.data];
@@ -152,6 +155,7 @@ export function openLancForm({ tipo = 'SAIDA', initial, edit, onSaved } = {}) {
         const p = { id: edit.id, versao: edit.versao, descricao: st.descricao.trim(), categoria_id: st.categoria_id || null };
         if (valorEditavel) Object.assign(p, { data_evento: st.data, valor_bruto: st.valor, descontos: st.descontos, acrescimos: st.acrescimos, encargos: st.encargos });
         if (st.itens.length) p.itens = st.itens.map((i) => ({ id: i.id, categoria_id: i.categoria_id }));
+        if (isContaSaida() && !!st.cobranca_banco !== !!edit.cobranca_banco) p.cobranca_banco = !!st.cobranca_banco;
         res = await call('lancamentos.atualizar', p, { rid: st.rid });
       } else {
         const p = { tipo: st.tipo, data_evento: st.data, descricao: st.descricao.trim(), valor_bruto: st.valor, descontos: st.descontos || 0, acrescimos: st.acrescimos || 0, encargos: st.encargos || 0,
@@ -159,6 +163,7 @@ export function openLancForm({ tipo = 'SAIDA', initial, edit, onSaved } = {}) {
         if (st.tipo === 'TRANSFERENCIA') Object.assign(p, { origem_id: st.origem_id, destino_id: st.destino_id });
         else { p.recurso_id = st.recurso_id; if (st.categoria_id) p.categoria_id = st.categoria_id; }
         if (isCard() && st.parcelas > 1) p.parcelas = st.parcelas;
+        if (isContaSaida() && st.cobranca_banco) p.cobranca_banco = true;
         if (st.itens.length) p.itens = st.itens.map((i) => ({ descricao: i.descricao || 'Item', quantidade: 1, valor_total: i.valor_total, categoria_id: i.categoria_id || st.categoria_id || undefined }));
         res = await call('lancamentos.criar', p, { rid: st.rid });
       }
@@ -172,6 +177,10 @@ export function openLancForm({ tipo = 'SAIDA', initial, edit, onSaved } = {}) {
       if (e instanceof ApiError && e.codigo === 'CONFLITO') {
         err.show('Outra pessoa alterou este lançamento.');
         s.setFooter(h('div', { class: 'btn-row' }, btn('Recarregar', { kind: 'secondary', icon: 'refresh', onClick: async () => { const d = await call('lancamentos.detalhe', { id: edit.id }); await s.close(); openLancForm({ edit: d, onSaved }); } }), saveBtn));
+      } else if (e instanceof ApiError && e.codigo === 'LIMITE_CONTA') {
+        err.show(e.message);
+        const pode = isContaSaida() && !st.cobranca_banco;
+        setTimeout(async () => { if (await avisoLimite(e.message, { podeCobranca: pode })) { st.cobranca_banco = true; st.rid = uuid(); persist(); rebuild(); submit(); } }, 0);
       } else err.show(e.message);
       s.body.scrollTop = 0;
     } finally { saveBtn.removeAttribute('aria-busy'); saveBtn.disabled = false; }

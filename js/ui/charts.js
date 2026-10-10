@@ -108,9 +108,9 @@ export function gauge({ limite, usado, label = 'Limite' }) {
   return wrap;
 }
 
-// Linha (evolução de preço)
-export function line(points, { fmt = money } = {}) {
-  const wrap = shell('chart--line', 'Evolução do preço');
+// Linha (evolução de preço, evolução do limite)
+export function line(points, { fmt = money, aria = 'Evolução do preço' } = {}) {
+  const wrap = shell('chart--line', aria);
   return responsive(wrap, (W) => {
     const H = 170, pad = { l: 46, r: 12, t: 14, b: 24 };
     if (!points.length) return;
@@ -121,7 +121,7 @@ export function line(points, { fmt = money } = {}) {
     const d = points.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${y(p.y).toFixed(1)}`).join(' ');
     const area = d + ` L${x(points.length - 1)} ${H - pad.b} L${x(0)} ${H - pad.b} Z`;
     const dot = svg('circle', { r: 5, class: 'line-focus', cx: -20, cy: -20 });
-    const root = svg('svg', { viewBox: `0 0 ${W} ${H}`, width: W, height: H, class: reduced() ? '' : 'is-anim', tabindex: '0', 'aria-label': 'Evolução do preço; use as setas para navegar' },
+    const root = svg('svg', { viewBox: `0 0 ${W} ${H}`, width: W, height: H, class: reduced() ? '' : 'is-anim', tabindex: '0', 'aria-label': aria + '; use as setas para navegar' },
       [mn, mx].map((v) => svg('g', {}, svg('line', { x1: pad.l, x2: W - pad.r, y1: y(v), y2: y(v), class: 'grid' }), svg('text', { x: pad.l - 6, y: y(v) + 4, class: 'axis', 'text-anchor': 'end', text: moneyShort(v) }))),
       svg('path', { d: area, class: 'line-area' }), svg('path', { d, class: 'line-path', fill: 'none' }),
       points.map((p, i) => svg('circle', { cx: x(i), cy: y(p.y), r: 3, class: 'line-dot' })),

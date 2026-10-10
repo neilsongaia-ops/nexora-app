@@ -2,7 +2,7 @@
 import { isoLocal, addDays, addMonths, diffDays, r2, sleep, monthStart, monthEnd } from './util.js';
 
 const T = isoLocal(new Date());
-const KEY = 'nx.demo.v9', FK = 'nx.demo.flags';
+const KEY = 'nx.demo.v10', FK = 'nx.demo.flags';
 const sget = (k) => { try { return JSON.parse(sessionStorage.getItem(k)); } catch { return null; } };
 const sset = (k, v) => { try { sessionStorage.setItem(k, JSON.stringify(v)); } catch { /* cheio */ } };
 const flags = Object.assign({ lento: false, falhar: false, conflito: false, expirar: false, offline: false, semBanco: false, vazio: false, contaNova: false }, sget(FK) || {});
@@ -26,6 +26,7 @@ const PREF_TIPOS = [
   { tipo: 'FATURA_VENCENDO', titulo: 'Fatura perto de vencer', descricao: 'Até 3 dias antes do vencimento.' },
   { tipo: 'PLANEJAMENTO_80', titulo: 'Planejamento em 80%', descricao: 'Quando um planejamento chega a 80% do limite ou da meta.' },
   { tipo: 'PLANEJAMENTO_100', titulo: 'Planejamento em 100%', descricao: 'Quando um planejamento atinge o limite ou bate a meta.' },
+  { tipo: 'CHEQUE_ESPECIAL', titulo: 'Cheque especial', descricao: 'Quando uma conta usa 80% ou 100% do cheque especial, ou fica acima do limite.' },
   { tipo: 'QUEDA_PRECO', titulo: 'Queda de preço', descricao: 'Produto que você compra 10% mais barato em outra loja.' },
 ];
 const prefsDe = () => DB.prefsNotif || (DB.prefsNotif = {});
@@ -161,6 +162,8 @@ function criarLanc(S, p, { origem = 'MANUAL', retro = true, seed = false } = {})
     l.recurso_id = r.id;
     if (r.tipo === 'CARTAO' && tipo === 'SAIDA') l.parcelas_total = Math.max(1, Math.min(48, Number(p.parcelas) || 1));
   }
+  if (p.cobranca_banco && !(tipo === 'SAIDA' && (recOf(S, l.recurso_id) || {}).tipo === 'CONTA')) fail('"Cobrança do banco" vale só para saída de conta.');
+  l.cobranca_banco = !!p.cobranca_banco;
   if (p.itens && p.itens.length) {
     l.itens = p.itens.map((i) => {
       const q = Number(i.quantidade) || 1, vt = r2(i.valor_total != null ? i.valor_total : q * (Number(i.valor_unitario) || 0));
@@ -277,7 +280,7 @@ function gerarRec(S, ate, seedPast = false) {
       if (r.gerados.includes(d)) continue;
       r.gerados.push(d);
       const st = seedPast && d <= T ? 'EFETIVADO' : d <= T ? 'PENDENTE' : 'PLANEJADO';
-      criarLanc(S, { tipo: r.tipo_lancamento, descricao: r.descricao, valor_bruto: r.valor, data_evento: d, status: st, recurso_id: r.recurso_id, origem_id: r.recurso_id, destino_id: r.recurso_destino_id, categoria_id: r.categoria_id, recorrencia_id: r.id }, { origem: 'RECORRENCIA', retro: false, seed: seedPast });
+      criarLanc(S, { tipo: r.tipo_lancamento, descricao: r.descricao, valor_bruto: r.valor, data_evento: d, status: st, recurso_id: r.recurso_id, origem_id: r.recurso_id, destino_id: r.recurso_destino_id, categoria_id: r.categoria_id, recorrencia_id: r.id, cobranca_banco: !!r.cobranca_banco }, { origem: 'RECORRENCIA', retro: false, seed: seedPast });
       n++;
     }
   }
@@ -286,6 +289,7 @@ function gerarRec(S, ate, seedPast = false) {
 function pagarFatura(S, f, contaId, valor, data, seed) {
   const k = recOf(S, f.recurso_id);
   const l = criarLanc(S, { tipo: 'TRANSFERENCIA', descricao: 'Pagamento da fatura · ' + k.nome, valor_bruto: valor, data_evento: data, status: 'EFETIVADO', origem_id: contaId, destino_id: k.id, fatura_id: f.id }, { origem: 'PAGAMENTO_FATURA', seed });
+  if (!seed) chequeConferir(S, l);
   S.pagamentos.push({ id: nid('pg'), fatura_id: f.id, valor: r2(valor), data, recurso_id: contaId, lancamento_id: l.id });
   return l;
 }
@@ -444,6 +448,30 @@ function seedCasa() {
   S.planejamentos.push({ id: 'pl4', nome: 'Saúde do ano', data_inicio: T.slice(0, 4) + '-01-01', data_fim: T.slice(0, 4) + '-12-31', valor_limite: 9600, prioridade: 4, status: 'ATIVO', versao: 1, categorias: [{ categoria_id: 'c_saude', valor_limite: 9600, percentual_execucao: 100 }] });
   // histórico de um lançamento
   const ex = S.lancamentos.filter((l) => l.descricao === 'Supermercado Bom Preço').slice(-1)[0];
+  // cheque especial, rendimento e histórico de configuração (Fase 5)
+  Object.assign(recOf(S, pp), { taxa_rendimento: 0.5, rendimento_unidade: 'MES', cheque_especial: false, limite_cheque: null });
+  const lt = R({ id: 'r_lt', tipo: 'CONTA', nome: 'Conta Banco Litoral', instituicao: 'Banco Litoral', tipo_conta: 'CORRENTE', agencia: '1290', numero: '55102-8', saldo_inicial: 1200, data_saldo_inicial: start, data_criacao: start,
+    cheque_especial: true, limite_cheque: 10000, juros_cheque: 8, juros_cheque_unidade: 'MES', taxa_rendimento: 0, rendimento_unidade: 'MES' });
+  const dg = R({ id: 'r_dg', tipo: 'CONTA', nome: 'Conta digital Ponte', instituicao: 'Ponte', tipo_conta: 'PAGAMENTO', saldo_inicial: 0, data_saldo_inicial: start, data_criacao: start,
+    cheque_especial: true, limite_cheque: 500, juros_cheque: 12, juros_cheque_unidade: 'MES', taxa_rendimento: 0, rendimento_unidade: 'MES' });
+  criarLanc(S, { tipo: 'ENTRADA', descricao: 'Saldo inicial', valor_bruto: 1200, data_evento: start, status: 'EFETIVADO', recurso_id: lt }, { origem: 'SALDO_INICIAL', seed: true });
+  S_({ tipo: 'SAIDA', descricao: 'Reforma do banheiro', valor_bruto: 6800, data_evento: addDays(T, -24), recurso_id: lt, categoria_id: 'c_casa' });
+  S_({ tipo: 'SAIDA', descricao: 'Material de construção', valor_bruto: 1946.31, data_evento: addDays(T, -10), recurso_id: lt, categoria_id: 'c_casa' });
+  criarLanc(S, { tipo: 'SAIDA', descricao: 'Parcela do empréstimo', valor_bruto: 2900, data_evento: addDays(T, -1), status: 'PENDENTE', recurso_id: lt, categoria_id: 'c_tarifa' }, { seed: true });
+  S_({ tipo: 'SAIDA', descricao: 'Assinatura de software', valor_bruto: 480, data_evento: addDays(T, -16), recurso_id: dg, categoria_id: 'c_assin' });
+  S_({ tipo: 'SAIDA', descricao: 'Juros do limite', valor_bruto: 62.4, data_evento: addDays(T, -2), recurso_id: dg, categoria_id: 'c_tarifa', cobranca_banco: true });
+  rec({ tipo_lancamento: 'SAIDA', descricao: 'Juros do limite', valor: 603.7, periodicidade: 'MENSAL', data_inicial: monthStart(addMonths(T, 1)), recurso_id: lt, categoria_id: 'c_tarifa', cobranca_banco: true });
+  const RAF = { id: 'u_raf', nome: 'Rafael Prado' }, ANA = { id: DB.usuario.id, nome: DB.usuario.nome };
+  S.historico = [];
+  const H = (rid, campo, ant, novo, quem, dia, hora = '10:00') => histAdd(S, rid.startsWith('pl') ? { id: rid, entidade: 'planejamento' } : recOf(S, rid), campo, ant, novo, quem, dia + 'T' + hora + ':00');
+  H(lt, 'limite_cheque', '', '5000', RAF, start, '09:12'); H(lt, 'juros_cheque', '', '8', RAF, start, '09:12');
+  H(lt, 'limite_cheque', '5000', '8000', ANA, addDays(start, 30), '18:40');
+  H(lt, 'limite_cheque', '8000', '10000', RAF, addDays(T, -26), '11:05'); H(lt, 'nome', 'Conta Litoral', 'Conta Banco Litoral', ANA, addDays(T, -26), '11:20');
+  H(dg, 'limite_cheque', '', '1000', ANA, start, '20:00'); H(dg, 'juros_cheque', '', '12', ANA, start, '20:00'); H(dg, 'limite_cheque', '1000', '500', RAF, addDays(T, -20), '08:30');
+  H(pp, 'taxa_rendimento', '', '0.5', ANA, start, '09:30');
+  H(k1, 'limite', '', '4000', ANA, start, '09:40'); H(k1, 'limite', '4000', '5000', ANA, addDays(start, 20), '14:10'); H(k1, 'limite', '5000', '6000', RAF, addDays(T, -40), '16:00'); H(k1, 'dia_vencimento', '12', '10', ANA, addDays(T, -40), '16:05');
+  H(k2, 'limite', '', '4500', RAF, start, '10:15'); H(k2, 'anuidade', '0', '39.9', RAF, addDays(T, -33), '12:00');
+  H('pl1', 'valor_limite', '1600', '1800', ANA, pm1, '08:00');
   if (ex) { S.auditoria.push({ entidade_id: ex.id, quando: ex.criado_em, quem: 'Rafael Prado', acao: 'criado', mudancas: {} }, { entidade_id: ex.id, quando: addDays(ex.data_evento, 1) + 'T21:14:00', quem: 'Ana Prado', acao: 'atualizado', mudancas: { descricao: ['Mercado', 'Supermercado Bom Preço'] } }); ex.versao = 2; }
   return S;
 }
@@ -496,6 +524,7 @@ function seedConvites() {
     { id: 'cv_r2', espaco_id: 'ws_viagem', espaco_nome: 'Rateio da viagem', email: DB.usuario.email, papel: 'leitura', status: 'PENDENTE', convidado_por_nome: 'Marina Alves', expira_em: addDays(T, 2), respondido_em: null, criado_em: addDays(T, -1) + 'T16:40:00' },
   ];
   DB.notificacoes = [
+    { id: 'nt13', tipo: 'CHEQUE_ESPECIAL', titulo: 'Conta digital Ponte acima do limite', texto: 'Saldo −R$ 542,40, limite R$ 500,00. Excesso de R$ 42,40.', lida: false, ref_id: 'cheq:r_dg:acima:500:' + T.slice(0, 7), espaco_id: '', criada_em: T + 'T06:00:00' },
     { id: 'nt1', tipo: 'CONVITE_RECEBIDO', titulo: 'Convite para o espaço Sítio dos Prado', texto: 'Rafael Prado convidou você como editor.', lida: false, ref_id: 'cv_r1', espaco_id: 'ws_sitio', criada_em: addDays(T, -0) + 'T08:05:00' },
     { id: 'nt2', tipo: 'CONVITE_RECEBIDO', titulo: 'Convite para o espaço Rateio da viagem', texto: 'Marina Alves convidou você como leitura.', lida: false, ref_id: 'cv_r2', espaco_id: 'ws_viagem', criada_em: addDays(T, -1) + 'T16:40:00' },
     { id: 'nt3', tipo: 'PAPEL_ALTERADO', titulo: 'Seu papel mudou', texto: 'Agora você é editor no espaço Apartamento da praia.', lida: false, ref_id: null, espaco_id: 'ws_praia', criada_em: addDays(T, -2) + 'T12:30:00' },
@@ -765,27 +794,34 @@ const R = {
       if (!(p.dia_fechamento >= 1 && p.dia_fechamento <= 31) || !(p.dia_vencimento >= 1 && p.dia_vencimento <= 31)) fail('Informe os dias de fechamento e vencimento.');
       Object.assign(r, { limite: r2(p.limite), dia_fechamento: p.dia_fechamento, dia_vencimento: p.dia_vencimento, instituicao: p.instituicao || null, bandeira: p.bandeira || null, final: p.final || null, regra_fechamento: p.regra_fechamento || 'INCLUSIVO', recurso_pagamento_id: p.recurso_pagamento_id || null, anuidade: r2(p.anuidade), taxa_juros: Number(p.taxa_juros) || 0 });
     } else Object.assign(r, { tipo_conta: p.tipo_conta || null, instituicao: p.instituicao || null, agencia: p.agencia || null, numero: p.numero || null, saldo_inicial: r2(p.saldo_inicial), data_saldo_inicial: p.data_saldo_inicial || T });
+    if (p.tipo === 'CONTA') contaCampos(r, p);
+    r.data_criacao = T;
     S.recursos.push(r);
+    if (r.tipo === 'CONTA') { if (r.cheque_especial) histAdd(S, r, 'limite_cheque', '', String(r.limite_cheque)); if (r.juros_cheque > 0) histAdd(S, r, 'juros_cheque', '', String(r.juros_cheque)); if (r.taxa_rendimento > 0) histAdd(S, r, 'taxa_rendimento', '', String(r.taxa_rendimento)); }
+    if (r.tipo === 'CARTAO' && r.limite > 0) histAdd(S, r, 'limite', '', String(r.limite));
     if (r.tipo !== 'CARTAO' && r.saldo_inicial > 0) criarLanc(S, { tipo: 'ENTRADA', descricao: 'Saldo inicial', valor_bruto: r.saldo_inicial, data_evento: r.data_saldo_inicial, status: 'EFETIVADO', recurso_id: r.id }, { origem: 'SALDO_INICIAL' });
     return r;
   },
   'recursos.atualizar': (p, { S }) => {
     const r = recOf(S, p.id) || fail('Recurso não encontrado.');
     checkVer(r, p.versao);
+    const antes = {}; HIST_CAMPOS.forEach((k) => { antes[k] = histVal(r, k); });
     ['nome', 'instituicao', 'agencia', 'numero', 'tipo_conta', 'limite', 'dia_fechamento', 'dia_vencimento', 'bandeira', 'final', 'regra_fechamento', 'recurso_pagamento_id', 'anuidade', 'taxa_juros'].forEach((k) => { if (p[k] !== undefined) r[k] = p[k]; });
+    if (r.tipo === 'CONTA') contaCampos(r, p);
+    HIST_CAMPOS.forEach((k) => { const v = histVal(r, k); if (v !== antes[k]) histAdd(S, r, k, antes[k], v); });
     r.versao++; r.versao_recurso++;
     return r;
   },
-  'recursos.inativar': ({ id }, { S }) => { const r = recOf(S, id) || fail('Recurso não encontrado.'); if (Math.abs(saldo(S, id, { proj: true })) > 0.004) fail('Só é possível inativar com saldo zero.'); r.status = 'INATIVO'; r.versao++; return r; },
+  'recursos.inativar': ({ id }, { S }) => { const r = recOf(S, id) || fail('Recurso não encontrado.'); if (Math.abs(saldo(S, id, { proj: true })) > 0.004) fail('Só é possível inativar com saldo zero.'); histAdd(S, r, 'status', 'ATIVO', 'INATIVO'); r.status = 'INATIVO'; r.versao++; return r; },
   'categorias.listar': (p, { S }) => S.categorias,
   'categorias.salvar': (p, { S }) => {
-    if (p.id) { const c = S.categorias.find((x) => x.id === p.id) || fail('Categoria não encontrada.'); if (p.nome) c.nome = p.nome.trim(); if (p.status) c.status = p.status; return c; }
+    if (p.id) { const c = S.categorias.find((x) => x.id === p.id) || fail('Categoria não encontrada.'); if (p.nome && p.nome.trim() !== c.nome) { histAdd(S, { id: c.id, entidade: 'categoria' }, 'nome', c.nome, p.nome.trim()); c.nome = p.nome.trim(); } if (p.status && p.status !== c.status) { histAdd(S, { id: c.id, entidade: 'categoria' }, 'status', c.status, p.status); c.status = p.status; } return c; }
     if (!String(p.nome || '').trim()) fail('Dê um nome.');
     if (S.categorias.some((c) => norm(c.nome) === norm(p.nome) && c.tipo === p.tipo && (c.pai_id || null) === (p.pai_id || null))) fail('Já existe uma categoria com esse nome.');
     const c = { id: nid('c'), nome: p.nome.trim(), tipo: p.tipo === 'RECEITA' ? 'RECEITA' : 'DESPESA', pai_id: p.pai_id || null, status: 'ATIVA' };
     S.categorias.push(c); return c;
   },
-  'lancamentos.criar': (p, { S }) => viewL(S, criarLanc(S, p), true),
+  'lancamentos.criar': (p, { S }) => { const l = criarLanc(S, p); chequeConferir(S, l); return viewL(S, l, true); },
   'lancamentos.listar': (p, { S }) => {
     const t = norm(p.texto), lim = Math.min(200, p.limite || 30), off = p.offset || 0;
     const catSet = p.categoria_id ? new Set(S.categorias.filter((c) => ancestors(S, c.id).includes(p.categoria_id)).map((c) => c.id)) : null;
@@ -804,6 +840,7 @@ const R = {
     const mud = {};
     const set = (k, v) => { if (v !== undefined && v !== l[k]) { mud[k] = [l[k], v]; l[k] = v; } };
     set('descricao', p.descricao); set('categoria_id', p.categoria_id);
+    if (p.cobranca_banco !== undefined && !!p.cobranca_banco !== !!l.cobranca_banco) { if (p.cobranca_banco && !cobrancaOk(S, l)) fail('"Cobrança do banco" vale só para saída de conta.'); set('cobranca_banco', !!p.cobranca_banco); }
     const futuro = ['PLANEJADO', 'PENDENTE'].includes(l.status);
     if (['data_evento', 'valor_bruto', 'descontos', 'acrescimos', 'encargos'].some((k) => p[k] !== undefined && p[k] !== l[k])) {
       if (!futuro || l.itens.length || l.parcelas.length) fail('Valor e data só mudam em lançamento futuro sem itens.');
@@ -816,13 +853,15 @@ const R = {
     audit(S, l.id, 'atualizado', mud);
     return viewL(S, l, true);
   },
-  'lancamentos.efetivar': ({ id, data }, { S }) => {
+  'lancamentos.efetivar': ({ id, data, cobranca_banco }, { S }) => {
     const l = findL(S, id);
     if (!['PLANEJADO', 'PENDENTE'].includes(l.status)) fail('Só lançamentos futuros podem ser efetivados.');
+    if (cobranca_banco !== undefined) { if (cobranca_banco && !cobrancaOk(S, l)) fail('"Cobrança do banco" vale só para saída de conta.'); l.cobranca_banco = !!cobranca_banco; }
     const d = data || T;
     l.status = 'EFETIVADO'; l.data_efetivacao = d; l.data_evento = d; parcelar(S, l, true);
     l.movimentacoes.forEach((m) => { m.data_efetivacao = d; });
     l.versao++; audit(S, l.id, 'efetivado', { status: ['PENDENTE', 'EFETIVADO'] });
+    chequeConferir(S, l);
     return viewL(S, l, true);
   },
   'lancamentos.cancelar': ({ id }, { S }) => {
@@ -851,12 +890,13 @@ const R = {
   },
   'recorrencias.listar': (p, { S }) => S.recorrencias.map(({ gerados, ...r }) => ({ ...r, proxima: (ocorrencias(r, addDays(T, 800)).find((d) => d >= T) || null) })),
   'recorrencias.salvar': (p, { S }) => {
-    if (p.id) { const r = S.recorrencias.find((x) => x.id === p.id) || fail('Recorrência não encontrada.'); ['descricao', 'valor', 'data_final', 'status'].forEach((k) => { if (p[k] !== undefined) r[k] = p[k]; }); r.versao++; return r; }
+    if (p.id) { const r = S.recorrencias.find((x) => x.id === p.id) || fail('Recorrência não encontrada.'); ['descricao', 'valor', 'data_final', 'status'].forEach((k) => { if (p[k] !== undefined) r[k] = p[k]; }); if (p.cobranca_banco !== undefined) { if (p.cobranca_banco && !(r.tipo_lancamento === 'SAIDA' && (recOf(S, r.recurso_id) || {}).tipo === 'CONTA')) fail('"Cobrança do banco" vale só para saída de conta.'); r.cobranca_banco = !!p.cobranca_banco; } r.versao++; return r; }
     if (!String(p.descricao || '').trim()) fail('Informe a descrição.');
     if (!(r2(p.valor) > 0)) fail('Informe o valor.');
     if (!p.recurso_id) fail('Escolha a conta.');
     if (p.tipo_lancamento === 'TRANSFERENCIA' && (!p.recurso_destino_id || p.recurso_destino_id === p.recurso_id)) fail('Escolha um destino diferente da origem.');
-    const r = { id: nid('rc'), tipo_lancamento: p.tipo_lancamento, descricao: p.descricao.trim(), valor: r2(p.valor), periodicidade: p.periodicidade || 'MENSAL', intervalo: p.intervalo || null, data_inicial: p.data_inicial || T, data_final: p.data_final || null, recurso_id: p.recurso_id, recurso_destino_id: p.recurso_destino_id || null, categoria_id: p.categoria_id || null, status: 'ATIVA', gerados: [], versao: 1 };
+    const r = { id: nid('rc'), tipo_lancamento: p.tipo_lancamento, descricao: p.descricao.trim(), valor: r2(p.valor), periodicidade: p.periodicidade || 'MENSAL', intervalo: p.intervalo || null, data_inicial: p.data_inicial || T, data_final: p.data_final || null, recurso_id: p.recurso_id, recurso_destino_id: p.recurso_destino_id || null, categoria_id: p.categoria_id || null, status: 'ATIVA', gerados: [], versao: 1, cobranca_banco: !!p.cobranca_banco };
+    if (r.cobranca_banco && !(r.tipo_lancamento === 'SAIDA' && (recOf(S, r.recurso_id) || {}).tipo === 'CONTA')) fail('"Cobrança do banco" vale só para saída de conta.');
     S.recorrencias.push(r); return r;
   },
   'recorrencias.gerar': ({ ate }, { S }) => ({ criadas: gerarRec(S, ate || addDays(T, 35)) }),
@@ -893,17 +933,33 @@ const R = {
     if (rc && !fim) fail('Defina o fim do período para repetir.');
     if (fim && fim < ini) fail('O fim precisa ser depois do início.');
     if (rc && rc.ate && rc.ate < ini) fail('A data final da repetição precisa ser depois do início.');
+    const plAntes = pl ? { nome: pl.nome, valor_limite: String(pl.valor_limite) } : null;
     if (!pl) { pl = { id: nid('pl'), versao: 0, tipo, serie_id: null, recorrencia: null }; S.planejamentos.push(pl); }
     Object.assign(pl, { nome: p.nome.trim(), data_inicio: ini, data_fim: fim, valor_limite: r2(p.valor_limite), prioridade: p.prioridade || 1, status: p.status || 'ATIVO', categorias: p.categorias.map((c) => ({ categoria_id: c.categoria_id, valor_limite: r2(c.valor_limite) || null, percentual_execucao: c.percentual_execucao || 100 })) });
     if (rc !== undefined) { pl.recorrencia = rc; if (rc && !pl.serie_id) pl.serie_id = pl.id; }
+    if (plAntes) { if (plAntes.nome !== pl.nome) histAdd(S, { id: pl.id, entidade: 'planejamento' }, 'nome', plAntes.nome, pl.nome); if (plAntes.valor_limite !== String(pl.valor_limite)) histAdd(S, { id: pl.id, entidade: 'planejamento' }, 'valor_limite', plAntes.valor_limite, String(pl.valor_limite)); }
     pl.versao++;
     return situacaoPlan(S, pl);
   },
   'planejamentos.listar': (p, { S }) => S.planejamentos.filter((x) => (!p.vigentes || vigenteP(x)) && (!p.serie_id || x.serie_id === p.serie_id)).map((x) => situacaoPlan(S, x)),
   'planejamentos.situacao': ({ id }, { S }) => situacaoPlan(S, S.planejamentos.find((x) => x.id === id) || fail('Planejamento não encontrado.')),
+  'historico.listar': (p, { S }) => {
+    const lista = (S.historico || []).filter((x) => (!p.entidade_id || x.entidade_id === p.entidade_id) && (!p.entidade || x.entidade === p.entidade) && (!p.campo || x.campo === p.campo)
+      && (!p.usuario_id || x.usuario_id === p.usuario_id) && (!p.de || x.data.slice(0, 10) >= p.de) && (!p.ate || x.data.slice(0, 10) <= p.ate)).sort((a, b) => (a.data < b.data ? 1 : a.data > b.data ? -1 : 0));
+    const off = Math.max(0, Number(p.offset) || 0), lim = Math.min(200, Math.max(1, Number(p.limite) || 50));
+    return { total: lista.length, itens: lista.slice(off, off + lim).map((x) => histView(S, x)) };
+  },
+  'historico.serie': ({ entidade_id, campo }, { S }) => {
+    if (!entidade_id || !campo) fail('Informe o item e o campo.');
+    const ls = (S.historico || []).filter((x) => x.entidade_id === entidade_id && x.campo === campo).sort((a, b) => (a.data < b.data ? -1 : a.data > b.data ? 1 : 0));
+    const numv = (v) => (v !== '' && !isNaN(Number(v)) ? Number(v) : v), pontos = [];
+    if (ls.length && ls[0].valor_anterior !== '') { const r = recOf(S, entidade_id); pontos.push({ data: (r && r.data_criacao) || ls[0].data.slice(0, 10), valor: numv(ls[0].valor_anterior), usuario_nome: '' }); }
+    ls.forEach((x) => pontos.push({ data: x.data.slice(0, 10), valor: numv(x.valor_novo), usuario_nome: x.usuario_nome }));
+    return { entidade_id, campo, campo_rotulo: HIST_ROTULOS[campo] || campo, pontos, atual: pontos.length ? pontos[pontos.length - 1].valor : null };
+  },
   'relatorios.painel': ({ de, ate }, { S }) => painel(S, de || monthStart(T), ate || monthEnd(T)),
   'relatorios.saldos': ({ data }, { S }) => {
-    const d = data || T, contas = S.recursos.filter((r) => r.tipo !== 'CARTAO' && r.status !== 'INATIVO').map((r) => ({ id: r.id, nome: r.nome, tipo: r.tipo, instituicao: r.instituicao, saldo_atual: saldo(S, r.id, { ate: d }), saldo_projetado: saldo(S, r.id, { proj: true }) }));
+    const d = data || T, contas = S.recursos.filter((r) => r.tipo !== 'CARTAO' && r.status !== 'INATIVO').map((r) => { const sa = saldo(S, r.id, { ate: d }); return { id: r.id, nome: r.nome, tipo: r.tipo, instituicao: r.instituicao, saldo_atual: sa, saldo_projetado: saldo(S, r.id, { proj: true }), ...contaSit(r, sa) }; });
     const cartoes = S.recursos.filter((r) => r.tipo === 'CARTAO' && r.status !== 'INATIVO').map((r) => ({ id: r.id, ...situacaoCartao(S, r.id) }));
     return { contas, cartoes, dinheiro_atual: r2(contas.reduce((s, c) => s + c.saldo_atual, 0)), patrimonio_liquido: r2(contas.reduce((s, c) => s + c.saldo_atual, 0) - cartoes.reduce((s, c) => s + c.limite_comprometido - c.credito_a_favor, 0)) };
   },
@@ -1154,10 +1210,72 @@ function estornar(S, l, motivo, data, seed) {
     l.parcelas.forEach((p) => { const f = fs.find((x) => x.id === p.fatura_id); if (!f || f.status === 'ABERTA') p.status = 'CANCELADA'; else faturado += p.valor; });
     if (faturado > 0) e.parcelas = [{ id: nid('pc'), numero: 1, total: 1, valor: -r2(faturado), fatura_id: `${k.id}~${faturaYm(k, T, true)}`, status: 'ATIVA' }];
   }
+  if (!seed) chequeConferir(S, e);
   e.estorno_de = l.id;
   l.status = 'ESTORNADO'; l.estornado_por = e.id; l.motivo_estorno = motivo.trim(); l.versao++;
   if (!seed) audit(S, l.id, 'estornado', { motivo: ['', motivo.trim()] });
   return e;
+}
+
+// ---------- cheque especial, rendimento e histórico de configuração ----------
+const dBR = (s) => s.slice(8, 10) + '/' + s.slice(5, 7) + '/' + s.slice(0, 4);
+const moeda = (v) => 'R$ ' + r2(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const taxaMensal = (v, u) => { const t = Number(v) || 0; if (t <= 0) return 0; return u === 'ANO' ? Math.pow(1 + t / 100, 1 / 12) - 1 : t / 100; };
+const cobrancaOk = (S, l) => l.tipo === 'SAIDA' && (recOf(S, l.recurso_id) || {}).tipo === 'CONTA';
+function contaCampos(r, p) {
+  ['taxa_rendimento', 'juros_cheque'].forEach((k) => { if (p[k] === undefined) return; const v = Number(p[k] === null || p[k] === '' ? 0 : p[k]); if (!(v >= 0 && v <= 1000)) fail('Taxa inválida (0 a 1000%).'); r[k] = v; });
+  ['rendimento_unidade', 'juros_cheque_unidade'].forEach((k) => { if (p[k] === undefined) return; const u = String(p[k] || '').toUpperCase(); if (u && !['MES', 'ANO'].includes(u)) fail('Unidade da taxa inválida (MES ou ANO).'); r[k] = u || 'MES'; });
+  if (p.limite_cheque !== undefined) {
+    if (p.limite_cheque === null || p.limite_cheque === '') { r.cheque_especial = false; r.limite_cheque = null; }
+    else { const l = Number(p.limite_cheque); if (!(l >= 0)) fail('Limite do cheque especial inválido.'); r.cheque_especial = true; r.limite_cheque = r2(l); }
+  }
+}
+function contaSit(r, sal) {
+  const out = { cheque_especial: null, rendimento_estimado_mes: null };
+  if (r.tipo !== 'CONTA') return out;
+  if (r.cheque_especial) {
+    const lim = r2(r.limite_cheque), emUso = r2(Math.max(0, -sal)), taxa = taxaMensal(r.juros_cheque, r.juros_cheque_unidade);
+    out.cheque_especial = { limite: lim, em_uso: r2(Math.min(emUso, lim)), limite_disponivel: r2(Math.max(0, lim - emUso)), disponivel_para_usar: r2(Math.max(0, sal + lim)),
+      uso_pct: lim > 0 ? Math.round(Math.min(emUso, lim) / lim * 1000) / 10 : 0, acima_do_limite: sal < -lim - 0.004, excesso: r2(Math.max(0, -sal - lim)),
+      juros_estimados_mes: r2(emUso * taxa), juros: Number(r.juros_cheque) || 0, juros_unidade: r.juros_cheque_unidade || '' };
+  }
+  const tr = taxaMensal(r.taxa_rendimento, r.rendimento_unidade);
+  if (tr > 0 && sal > 0) out.rendimento_estimado_mes = r2(sal * tr);
+  return out;
+}
+/* Como o banco: bloqueia a saída efetivada que deixa a conta abaixo de −limite (exceto cobrança do banco). Conferência pela linha do tempo. */
+function chequeConferir(S, l) {
+  if (!l || l.status !== 'EFETIVADO' || l.cobranca_banco || l.origem === 'SALDO_INICIAL') return;
+  for (const m of l.movimentacoes) {
+    if (m.natureza !== 'DEBITO' || !m.data_efetivacao) continue;
+    const r = recOf(S, m.recurso_id);
+    if (!r || r.tipo !== 'CONTA' || !r.cheque_especial) continue;
+    const lim = r2(r.limite_cheque), datas = [m.data_efetivacao].concat(T > m.data_efetivacao ? [T] : []);
+    for (const dt of datas) {
+      const com = saldo(S, r.id, { ate: dt }), sem = r2(com + m.valor);
+      if (com < -lim - 0.004 && (dt === m.data_efetivacao || sem >= -lim - 0.004)) fail('Saldo + limite insuficientes na conta "' + r.nome + '" em ' + dBR(dt) + ': faltam ' + moeda(-lim - com) + '. Se for uma cobrança do próprio banco (juros, tarifa), marque "cobrança do banco".', 'LIMITE_CONTA');
+    }
+  }
+}
+const HIST_CAMPOS = ['nome', 'instituicao', 'agencia', 'numero', 'tipo_conta', 'limite', 'dia_fechamento', 'dia_vencimento', 'bandeira', 'final', 'regra_fechamento', 'recurso_pagamento_id', 'anuidade', 'taxa_juros',
+  'taxa_rendimento', 'rendimento_unidade', 'cheque_especial', 'limite_cheque', 'juros_cheque', 'juros_cheque_unidade'];
+const HIST_ROTULOS = { nome: 'Nome', status: 'Situação', limite: 'Limite', limite_cheque: 'Limite do cheque especial', cheque_especial: 'Controle do cheque especial', juros_cheque: 'Juros do cheque especial',
+  juros_cheque_unidade: 'Unidade dos juros', taxa_rendimento: 'Taxa de rendimento', rendimento_unidade: 'Unidade do rendimento', tipo_conta: 'Tipo de conta', instituicao: 'Instituição', agencia: 'Agência', numero: 'Número',
+  bandeira: 'Bandeira', final: 'Final do cartão', dia_fechamento: 'Dia de fechamento', dia_vencimento: 'Dia de vencimento', regra_fechamento: 'Regra de fechamento', anuidade: 'Anuidade', taxa_juros: 'Juros do cartão',
+  recurso_pagamento_id: 'Conta de pagamento', valor_limite: 'Limite/meta', valor: 'Valor', descricao: 'Descrição', cobranca_banco: 'Cobrança do banco' };
+const entOf = (r) => r.entidade || { CONTA: 'conta', CARTAO: 'cartao', CARTEIRA: 'carteira' }[r.tipo] || 'recurso';
+function histVal(r, k) {
+  if (k === 'cheque_especial') return r.tipo === 'CONTA' && r.cheque_especial ? 'SIM' : '';
+  if (k === 'limite_cheque') return r.cheque_especial ? String(r2(r.limite_cheque)) : '';
+  return r[k] == null ? '' : String(r[k]);
+}
+function histAdd(S, r, campo, ant, novo, quem = DB.usuario, data = now()) {
+  (S.historico ||= []).push({ id: nid('hc'), entidade: entOf(r), entidade_id: r.id, campo, valor_anterior: ant, valor_novo: novo, usuario_id: quem.id, usuario_nome: quem.nome || quem.email, data });
+}
+function histView(S, x) {
+  const nome = x.entidade === 'planejamento' ? (S.planejamentos.find((p) => p.id === x.entidade_id) || {}).nome : x.entidade === 'categoria' ? (S.categorias.find((c) => c.id === x.entidade_id) || {}).nome
+    : x.entidade === 'recorrencia' ? (S.recorrencias.find((c) => c.id === x.entidade_id) || {}).descricao : (recOf(S, x.entidade_id) || {}).nome;
+  return { ...x, entidade_nome: nome || '', campo_rotulo: HIST_ROTULOS[x.campo] || x.campo };
 }
 
 export async function handle(action, p) {

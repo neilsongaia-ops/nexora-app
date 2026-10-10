@@ -1,4 +1,4 @@
-// Ajustes: perfil, aparência, notificações, espaço e pessoas, categorias, preços e deslocamento, reputação, exportar, sair
+// Ajustes: perfil, aparência, notificações, espaço e pessoas, categorias, histórico de configuração, preços e deslocamento, reputação, exportar, sair
 import { h, money, uuid, emit, ls, dmy } from '../util.js';
 import { icon } from '../icons.js';
 import { DEMO, call, load, clearSession, invalidate, session } from '../api.js';
@@ -7,6 +7,7 @@ import { openSheet, openMenu, pick, confirmSheet } from '../ui/sheet.js';
 import { toast } from '../ui/toast.js';
 import { refreshNotif, prefsLista } from '../ui/notificacoes.js';
 import { abrirConvitesEnviados } from './convites.js';
+import { openHistorico } from '../ui/historico.js';
 import { geolocate } from '../ui/media.js';
 import { segmented, card, row, badge, empty, errorState, skelRows, sectionHead, btn, textField, moneyField, toggle, formError, avatar, kv, tip } from '../ui/components.js';
 import { applyTema, getTema } from '../tema.js';
@@ -30,6 +31,7 @@ export default async function ajustes(ctx) {
         admin ? nav('edit', 'Renomear espaço', null, renomearEspaco) : null,
         admin ? nav('users', 'Pessoas e papéis', null, pessoas) : row({ lead: h('span', { class: 'tipo-ico' }, icon('users')), title: 'Seu papel', trail: badge(PAPEL[b.espaco.papel], b.espaco.papel === 'leitura' ? 'neutral' : 'in') }),
         nav('tag', 'Categorias', `${b.categorias.length} categorias`, categorias),
+        nav('history', 'Histórico de configuração', null, () => openHistorico()),
         admin ? nav('download', 'Exportar dados do espaço', 'Arquivo JSON', exportar) : null,
         admin ? nav('shield', 'Verificar integridade', null, integridade) : null,
         admin ? nav('x', 'Arquivar ou excluir este espaço', null, arquivarEspaco, 'out') : null)),

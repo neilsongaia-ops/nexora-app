@@ -10,6 +10,7 @@ import { segmented, chip, row, amount, badge, tipoIcon, empty, errorState, skelR
 import { efetivar, openLancMenu } from './lancAcoes.js';
 import { openFatura, pagarFatura } from './contas.js';
 import { recursoItems, categoriaItems } from './lancForm.js';
+import { cobrancaField } from '../ui/conta.js';
 
 const PER = { DIARIA: 'Todo dia', SEMANAL: 'Toda semana', MENSAL: 'Todo mês', ANUAL: 'Todo ano', A_CADA_N_DIAS: 'A cada N dias' };
 
@@ -51,7 +52,7 @@ export default async function agenda(ctx) {
   }
   function item(i) {
     const fat = i.origem === 'FATURA', k = fat && store.recs.get(i.recurso_id);
-    const lanc = { id: i.id, descricao: i.descricao, valor_total: i.valor, tipo: i.tipo === 'PAGAR' ? 'SAIDA' : 'ENTRADA', status: i.status || 'PENDENTE', data_evento: i.data, origem: 'MANUAL' };
+    const lanc = { id: i.id, descricao: i.descricao, valor_total: i.valor, tipo: i.tipo === 'PAGAR' ? 'SAIDA' : 'ENTRADA', status: i.status || 'PENDENTE', data_evento: i.data, origem: 'MANUAL', recurso_id: i.recurso_id };
     const r = row({
       cls: i.atrasado ? 'is-late' : '', lead: fat ? h('span', { class: 'tipo-ico tone-out' }, icon('card')) : tipoIcon(lanc.tipo),
       title: i.descricao, sub: (i.atrasado ? 'Venceu ' + relDate(i.data) : dmy(i.data)) + (fat ? '' : i.recurso_id ? ' · ' + ((store.recs.get(i.recurso_id) || {}).nome || '') : ''),
@@ -99,22 +100,25 @@ export default async function agenda(ctx) {
 
 function recForm(edit) {
   const rid = uuid(), err = formError();
-  const st = edit ? { ...edit } : { tipo_lancamento: 'SAIDA', descricao: '', valor: 0, periodicidade: 'MENSAL', intervalo: 15, data_inicial: HOJE, data_final: null, recurso_id: null, recurso_destino_id: null, categoria_id: null };
+  const st = edit ? { ...edit } : { tipo_lancamento: 'SAIDA', descricao: '', valor: 0, periodicidade: 'MENSAL', intervalo: 15, data_inicial: HOJE, data_final: null, recurso_id: null, recurso_destino_id: null, categoria_id: null, cobranca_banco: false };
+  if (edit) st.cobranca_banco = !!edit.cobranca_banco;
+  const contaSaida = () => st.tipo_lancamento === 'SAIDA' && (store.recs.get(st.recurso_id) || {}).tipo === 'CONTA';
   let fd, fv;
   const build = () => {
     const out = [err];
     if (!edit) out.push(segmented([{ value: 'SAIDA', label: 'Saída', icon: 'out', tone: 'out' }, { value: 'ENTRADA', label: 'Entrada', icon: 'in', tone: 'in' }, { value: 'TRANSFERENCIA', label: 'Transferência', icon: 'swap', tone: 'xfer' }], { value: st.tipo_lancamento, cls: 'seg--tipo', aria: 'Tipo', onChange: (v) => { st.tipo_lancamento = v; st.categoria_id = null; s.setContent(build()); } }));
     fv = moneyField('Valor', { value: st.valor, big: true, onChange: (v) => { st.valor = v; fv.setError(''); } });
-    fd = textField('Descrição', { value: st.descricao, placeholder: 'Ex.: Aluguel', onInput: (v) => { st.descricao = v; fd.setError(''); } });
+    fd = textField('Descrição', { value: st.descricao, placeholder: st.cobranca_banco ? 'Ex.: Juros do limite' : 'Ex.: Aluguel', onInput: (v) => { st.descricao = v; fd.setError(''); } });
     out.push(fv, fd);
     if (!edit) {
-      out.push(pickField(st.tipo_lancamento === 'TRANSFERENCIA' ? 'De' : st.tipo_lancamento === 'SAIDA' ? 'Pagar com' : 'Receber em', { value: st.recurso_id, items: () => recursoItems({ semCartao: st.tipo_lancamento !== 'SAIDA' }), onChange: (v) => { st.recurso_id = v; } }));
+      out.push(pickField(st.tipo_lancamento === 'TRANSFERENCIA' ? 'De' : st.tipo_lancamento === 'SAIDA' ? 'Pagar com' : 'Receber em', { value: st.recurso_id, items: () => recursoItems({ semCartao: st.tipo_lancamento !== 'SAIDA' }), onChange: (v) => { st.recurso_id = v; s.setContent(build()); } }));
       if (st.tipo_lancamento === 'TRANSFERENCIA') out.push(pickField('Para', { value: st.recurso_destino_id, items: () => recursoItems({ semCartao: true }), onChange: (v) => { st.recurso_destino_id = v; } }));
       else out.push(pickField('Categoria', { value: st.categoria_id, items: () => categoriaItems(st.tipo_lancamento === 'ENTRADA' ? 'RECEITA' : 'DESPESA'), placeholder: 'Sem categoria', onChange: (v) => { st.categoria_id = v; } }));
       out.push(pickField('Repete', { value: st.periodicidade, items: Object.entries(PER).map(([value, label]) => ({ value, label })), onChange: (v) => { st.periodicidade = v; s.setContent(build()); } }));
       if (st.periodicidade === 'A_CADA_N_DIAS') out.push(h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Intervalo'), stepper({ value: st.intervalo, min: 2, max: 365, label: 'Dias', format: (v) => v + ' dias', onChange: (v) => { st.intervalo = v; } })));
       out.push(h('div', { class: 'grid-2' }, dateField('Começa em', { value: st.data_inicial, onChange: (v) => { st.data_inicial = v; } }), dateField('Termina em', { value: st.data_final || addDays(HOJE, 365), onChange: (v) => { st.data_final = v; } })));
     } else out.push(dateField('Termina em', { value: st.data_final || addDays(HOJE, 365), onChange: (v) => { st.data_final = v; } }));
+    if (contaSaida()) out.push(cobrancaField(st.cobranca_banco, (v) => { st.cobranca_banco = v; if (fd) fd.input.placeholder = v ? 'Ex.: Juros do limite' : 'Ex.: Aluguel'; }));
     return out;
   };
   const b = btn(edit ? 'Salvar' : 'Criar recorrência', { size: 'lg', full: true });
@@ -126,6 +130,7 @@ function recForm(edit) {
     b.disabled = true; b.setAttribute('aria-busy', 'true'); err.show('');
     try {
       const p = edit ? { id: edit.id, descricao: st.descricao.trim(), valor: st.valor, data_final: st.data_final } : { tipo_lancamento: st.tipo_lancamento, descricao: st.descricao.trim(), valor: st.valor, periodicidade: st.periodicidade, intervalo: st.periodicidade === 'A_CADA_N_DIAS' ? st.intervalo : undefined, data_inicial: st.data_inicial, data_final: st.data_final || undefined, recurso_id: st.recurso_id, recurso_destino_id: st.recurso_destino_id || undefined, categoria_id: st.categoria_id || undefined };
+      if (contaSaida() && (st.cobranca_banco || edit)) p.cobranca_banco = !!st.cobranca_banco;
       await call('recorrencias.salvar', p, { rid });
       await s.close(); toast('Recorrência salva.', { tone: 'success' }); emit('dados');
     } catch (e) { err.show(e.message); } finally { b.disabled = false; b.removeAttribute('aria-busy'); }
