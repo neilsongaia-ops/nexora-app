@@ -7,6 +7,7 @@ import { openSheet, closeAll, sheetsOpen, openMenu } from './ui/sheet.js';
 import { toast } from './ui/toast.js';
 import { errorState, skelCards, btn, textField, formError, badge, avatar } from './ui/components.js';
 import { pullToRefresh } from './ui/gestures.js';
+import { bellMount, refreshNotif } from './ui/notificacoes.js';
 import { applyTema } from './tema.js';
 
 const NAV = [
@@ -28,6 +29,7 @@ const SCREENS = {
 const FAB_ON = new Set(['inicio', 'lancamentos', 'agenda', 'contas']);
 const view = qs('#view');
 let cleanups = [], seq = 0, current = null;
+let semEspacoEmCurso = false;
 
 export const go = async (path) => { await closeAll(); if (location.hash !== '#' + path) location.hash = path; else route(); };
 const parse = () => {
@@ -73,9 +75,9 @@ function renderNav() {
   tabs.push(h('button', { class: 'tab', type: 'button', dataset: { nav: 'mais' }, 'aria-haspopup': 'dialog', onclick: () => openMenu({ title: 'Mais', items: items.filter((n) => n.more).map((n) => ({ icon: n.icon, label: n.label, onClick: () => go('/' + n.id) })) }) }, icon('more'), h('span', {}, 'Mais')));
   qs('#tabs').replaceChildren(...tabs);
   qs('#side-space').replaceChildren(spaceButton(false));
-  qs('#top-space').replaceChildren(spaceButton(true));
+  qs('#top-space').replaceChildren(bellMount('top'), spaceButton(true));
   const u = store.boot.usuario;
-  qs('#side-foot').replaceChildren(h('a', { class: 'side-user', href: '#/ajustes' }, avatar(u.nome || u.email), h('span', { class: 'side-user-txt' }, h('span', { class: 'side-user-name' }, u.nome || 'Perfil'), h('span', { class: 'side-user-mail' }, u.email))), DEMO ? h('button', { class: 'chip chip--demo', type: 'button', onclick: openDemo }, icon('settings'), h('span', {}, 'Demonstração')) : null);
+  qs('#side-foot').replaceChildren(bellMount('side'), h('a', { class: 'side-user', href: '#/ajustes' }, avatar(u.nome || u.email), h('span', { class: 'side-user-txt' }, h('span', { class: 'side-user-name' }, u.nome || 'Perfil'), h('span', { class: 'side-user-mail' }, u.email))), DEMO ? h('button', { class: 'chip chip--demo', type: 'button', onclick: openDemo }, icon('settings'), h('span', {}, 'Demonstração')) : null);
 }
 function markNav(name) {
   const more = NAV.find((n) => n.id === name && n.more);
@@ -96,8 +98,11 @@ async function switchSpace() {
 }
 export async function changeSpace(id) {
   setSession({ ws: id }); invalidate();
+  semEspacoEmCurso = false;
+  const a = qs('#auth'); if (a && !a.hidden) { a.hidden = true; a.replaceChildren(); }
+  qs('#boot').hidden = true; qs('#app').hidden = false;
   view.replaceChildren(skelCards(3));
-  try { await loadBoot(); renderNav(); toast('Espaço: ' + store.boot.espaco.nome, { ico: 'spaces' }); go('/inicio'); route(); } catch (e) { view.replaceChildren(errorState(e.message, () => changeSpace(id))); }
+  try { await loadBoot(); renderNav(); toast('Espaço: ' + store.boot.espaco.nome, { ico: 'spaces' }); go('/inicio'); route(); refreshNotif(); } catch (e) { view.replaceChildren(errorState(e.message, () => changeSpace(id))); }
 }
 export function createSpace(first) {
   const err = formError();
@@ -111,6 +116,29 @@ export function createSpace(first) {
   };
   f.input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
   const s = openSheet({ title: first ? 'Crie seu primeiro espaço' : 'Novo espaço', content: [err, f], footer: b });
+}
+
+// Sem espaço: mostra convites recebidos (boas-vindas) antes de cair em "criar espaço".
+async function fluxoSemEspaco() {
+  if (semEspacoEmCurso) return;
+  semEspacoEmCurso = true;
+  let lista = [];
+  try { lista = await call('convites.recebidos', {}, { semEspaco: true }); } catch { lista = []; }
+  if (!lista || !lista.length) { qs('#boot').hidden = true; qs('#auth').hidden = true; qs('#app').hidden = false; semEspacoEmCurso = false; createSpace(true); return; }
+  qs('#boot').hidden = true; qs('#app').hidden = true;
+  const a = qs('#auth'); a.hidden = false;
+  const mod = await import('./telas/convites.js');
+  mod.renderBoasVindas(a, lista, {
+    onEntrar: (espaco_id) => changeSpace(espaco_id),
+    onCriarEspaco: () => createSpace(true),
+    onVazio: () => { semEspacoEmCurso = false; a.hidden = true; a.replaceChildren(); qs('#app').hidden = false; createSpace(true); },
+  });
+}
+
+// Abre "Pessoas e papéis" do espaço indicado (troca de espaço se preciso).
+export async function irParaPessoas(espaco_id) {
+  if (espaco_id && espaco_id !== session.ws) await changeSpace(espaco_id);
+  go('/ajustes');
 }
 
 // ---------- roteamento ----------
@@ -158,7 +186,7 @@ on('api-erro', (e) => {
   } else if (e.codigo === 'CONFLITO') {
     toast('Alguém alterou isto antes de você. Os dados foram recarregados.', { tone: 'warn', ico: 'refresh', duration: 5000 });
     invalidate();
-  } else if (e.codigo === 'SEM_ESPACO') createSpace(true);
+  } else if (e.codigo === 'SEM_ESPACO') fluxoSemEspaco();
 });
 
 // ---------- login / inicialização ----------
@@ -176,7 +204,7 @@ async function boot() {
     qs('#boot').hidden = true;
     if (e.codigo === 'LOGIN') return;
     if (e.codigo === 'SEM_BANCO') return showSemBanco();
-    if (e.codigo === 'SEM_ESPACO') { qs('#app').hidden = false; return; }
+    if (e.codigo === 'SEM_ESPACO') return fluxoSemEspaco();
     const a = qs('#auth'); a.hidden = false;
     a.replaceChildren(h('div', { class: 'auth-card' }, errorState(e.message, () => { a.hidden = true; boot(); })));
     return;

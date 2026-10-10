@@ -1,10 +1,12 @@
 // Ajustes: perfil, aparência, espaço e pessoas, categorias, preços e deslocamento, reputação, exportar, sair
-import { h, money, uuid, emit, ls } from '../util.js';
+import { h, money, uuid, emit, ls, dmy } from '../util.js';
 import { icon } from '../icons.js';
 import { DEMO, call, load, clearSession, invalidate, session } from '../api.js';
 import { store, can, loadBoot, catNome } from '../store.js';
 import { openSheet, openMenu, pick, confirmSheet } from '../ui/sheet.js';
 import { toast } from '../ui/toast.js';
+import { refreshNotif } from '../ui/notificacoes.js';
+import { abrirConvitesEnviados } from './convites.js';
 import { geolocate } from '../ui/media.js';
 import { segmented, card, row, badge, empty, errorState, skelRows, sectionHead, btn, textField, moneyField, toggle, formError, avatar, kv, tip } from '../ui/components.js';
 import { applyTema, getTema } from '../tema.js';
@@ -119,7 +121,9 @@ export default async function ajustes(ctx) {
             ...['leitura', 'editor', 'admin'].filter((p) => p !== m.papel).map((p) => ({ icon: 'users', label: 'Mudar para ' + PAPEL[p], onClick: async () => { try { await call('membros.convidar', { email: m.email, papel: p }, { rid: uuid() }); toast('Papel alterado.', { tone: 'success' }); draw(); } catch (e) { toast(e.message, { tone: 'danger' }); } } })),
             { icon: 'x', label: 'Remover do espaço', tone: 'out', onClick: async () => { if (!(await confirmSheet({ title: 'Remover ' + (m.nome || m.email) + '?', confirm: 'Remover', tone: 'danger' }))) return; try { await call('membros.remover', { usuario_id: m.usuario_id }, { rid: uuid() }); toast('Removido.', { tone: 'success' }); draw(); } catch (e) { toast(e.message, { tone: 'danger' }); } } },
           ] }) })))]);
-        s.setFooter(btn('Convidar pessoa', { icon: 'plus', full: true, size: 'lg', onClick: convidar }));
+        s.setFooter(h('div', { class: 'btn-col' },
+          btn('Convites enviados', { kind: 'secondary', icon: 'mail', full: true, onClick: () => abrirConvitesEnviados(draw) }),
+          btn('Convidar pessoa', { icon: 'plus', full: true, size: 'lg', onClick: convidar })));
       } catch (e) { s.setContent(errorState(e.message, draw)); }
     };
     const convidar = () => {
@@ -127,7 +131,23 @@ export default async function ajustes(ctx) {
       const err = formError(), rid = uuid();
       const f = textField('E-mail', { type: 'email', inputmode: 'email', autofocus: true, placeholder: 'pessoa@exemplo.com', onInput: (v) => { email = v.trim().toLowerCase(); f.setError(''); } });
       const bt = btn('Convidar', { size: 'lg', full: true });
-      bt.onclick = async () => { if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { f.setError('Confira o e-mail'); return; } bt.disabled = true; try { await call('membros.convidar', { email, papel }, { rid }); await c.close(); toast('Convite registrado. A pessoa já pode entrar.', { tone: 'success' }); draw(); } catch (e) { err.show(e.message); } finally { bt.disabled = false; } };
+      bt.onclick = async () => {
+        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { f.setError('Confira o e-mail'); return; }
+        bt.disabled = true;
+        try {
+          const r = await call('membros.convidar', { email, papel }, { rid });
+          await c.close();
+          if (r.status === 'MEMBRO') { toast('Papel alterado.', { tone: 'success' }); }
+          else {
+            let msg = 'Convite enviado a ' + r.email + '. Vale até ' + dmy(r.expira_em) + '.';
+            if (r.email_enviado === false) msg += ' O e-mail não pôde ser enviado agora; a pessoa verá o convite ao entrar no app.';
+            else if (r.conta_existe === false) msg += ' ' + r.email + ' ainda não tem conta; o e-mail traz o link para criar.';
+            toast(msg, { tone: 'success', ico: 'mail', duration: 6000 });
+          }
+          refreshNotif();
+          draw();
+        } catch (e) { err.show(e.message); } finally { bt.disabled = false; }
+      };
       const c = openSheet({ title: 'Convidar pessoa', footer: bt, content: [err, f, h('div', { class: 'field' }, h('div', { class: 'field-top' }, h('span', { class: 'field-label' }, 'Papel'), tip('Leitura só vê. Editor lança e edita. Admin também gerencia pessoas e configurações.')),
         segmented([{ value: 'leitura', label: 'Leitura' }, { value: 'editor', label: 'Editor' }, { value: 'admin', label: 'Admin' }], { value: papel, aria: 'Papel', onChange: (v) => { papel = v; } }))] });
     };
@@ -195,6 +215,7 @@ export async function openDemoPanel() {
       btn('Expirar sessão agora', { kind: 'secondary', icon: 'lock', onClick: async () => { demo.setFlag('expirar', true); await s.close(); emit('dados'); } }),
       btn('Trocar para espaço só leitura', { kind: 'secondary', icon: 'users', onClick: async () => { await s.close(); (await import('../app.js')).changeSpace('ws_praia'); } }),
       btn('Primeiro acesso (espaço vazio)', { kind: 'secondary', icon: 'plus', onClick: async () => { await s.close(); const w = await call('ws.criar', { nome: 'Espaço novo' }, { rid: uuid() }); (await import('../app.js')).changeSpace(w.id); } }),
+      btn('Conta nova com convite pendente', { kind: 'secondary', icon: 'mail', onClick: () => { demo.setFlag('contaNova', true); ls.del('nx.ws'); location.reload(); } }),
       btn('Banco ainda não criado', { kind: 'secondary', icon: 'refresh', onClick: () => { demo.setFlag('semBanco', true); location.reload(); } }),
       btn('Recomeçar demonstração', { kind: 'danger', icon: 'refresh', onClick: () => { demo.resetDemo(); ls.del('nx.ws'); location.reload(); } })),
   ] });

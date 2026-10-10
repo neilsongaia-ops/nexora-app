@@ -2,14 +2,14 @@
 import { isoLocal, addDays, addMonths, diffDays, r2, sleep, monthStart, monthEnd } from './util.js';
 
 const T = isoLocal(new Date());
-const KEY = 'nx.demo.v5', FK = 'nx.demo.flags';
+const KEY = 'nx.demo.v6', FK = 'nx.demo.flags';
 const sget = (k) => { try { return JSON.parse(sessionStorage.getItem(k)); } catch { return null; } };
 const sset = (k, v) => { try { sessionStorage.setItem(k, JSON.stringify(v)); } catch { /* cheio */ } };
-const flags = Object.assign({ lento: false, falhar: false, conflito: false, expirar: false, offline: false, semBanco: false, vazio: false }, sget(FK) || {});
+const flags = Object.assign({ lento: false, falhar: false, conflito: false, expirar: false, offline: false, semBanco: false, vazio: false, contaNova: false }, sget(FK) || {});
 if (new URLSearchParams(location.search).get('lento') === '1') flags.lento = true;
 export const getFlags = () => ({ ...flags });
 export function setFlag(k, v) { flags[k] = v; sset(FK, flags); }
-export function resetDemo() { sessionStorage.removeItem(KEY); DB = null; }
+export function resetDemo() { sessionStorage.removeItem(KEY); DB = null; flags.contaNova = false; sset(FK, flags); }
 
 let DB = sget(KEY);
 const save = () => sset(KEY, DB);
@@ -19,6 +19,14 @@ const nid = (p) => p + (++DB.seq).toString(36);
 const fail = (msg, codigo = '') => { const e = new Error(msg); e.codigo = codigo; throw e; };
 const norm = (s) => String(s || '').normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
 const now = () => new Date().toISOString().slice(0, 19);
+const PAPEL_TXT = { leitura: 'leitura', editor: 'editor', admin: 'administrador' };
+/* Fila de notificações da PESSOA logada (no demo, só Ana tem feed local). */
+function notificar(email, n) {
+  if (!DB.notificacoes || email !== DB.usuario.email) return null;
+  const item = { id: nid('nt'), lida: false, ref_id: null, espaco_id: null, criada_em: now(), ...n };
+  DB.notificacoes.unshift(item);
+  return item;
+}
 function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 const gtin = (b12) => { let s = 0; for (let i = 0; i < 12; i++) s += Number(b12[11 - i]) * (i % 2 === 0 ? 3 : 1); return b12 + String((10 - (s % 10)) % 10); };
 const dv11 = (s) => { let w = 2, t = 0; for (let i = s.length - 1; i >= 0; i--) { t += Number(s[i]) * w; w = w === 9 ? 2 : w + 1; } const r = t % 11; return r < 2 ? 0 : 11 - r; };
@@ -416,7 +424,36 @@ function seed() {
     repetidos: [{ chave: 'Leite integral 1 L', itens: [{ id: 'g4', nome: 'Leite integral', marca: 'Vale Doce', gtin: gtin('789100010004') }, { id: 'g88', nome: 'LEITE INTEGRAL VALE DOCE 1L', marca: 'Vale Doce', gtin: '7891000100880' }] }],
     imagens: [{ gtin: gtin('789100010016'), produto: 'Detergente neutro', ativa: true }],
   };
+  seedConvites();
   save();
+}
+
+function seedConvites() {
+  const casa = DB.spaces.find((s) => s.id === 'ws_casa');
+  casa.convites = [
+    { id: 'cv_e1', espaco_id: 'ws_casa', espaco_nome: 'Casa', email: 'tio.marcos@exemplo.com', papel: 'editor', status: 'PENDENTE', convidado_por_nome: 'Ana Prado', expira_em: addDays(T, 9), respondido_em: null, criado_em: addDays(T, -5) + 'T14:10:00' },
+    { id: 'cv_e2', espaco_id: 'ws_casa', espaco_nome: 'Casa', email: 'bruno.lima@exemplo.com', papel: 'leitura', status: 'PENDENTE', convidado_por_nome: 'Ana Prado', expira_em: addDays(T, -1), respondido_em: null, criado_em: addDays(T, -15) + 'T09:30:00' },
+    { id: 'cv_e3', espaco_id: 'ws_casa', espaco_nome: 'Casa', email: 'carla.souza@exemplo.com', papel: 'editor', status: 'ACEITO', convidado_por_nome: 'Ana Prado', expira_em: addDays(T, -3), respondido_em: addDays(T, -6) + 'T20:00:00', criado_em: addDays(T, -10) + 'T11:00:00' },
+    { id: 'cv_e4', espaco_id: 'ws_casa', espaco_nome: 'Casa', email: 'dido.antigo@exemplo.com', papel: 'leitura', status: 'RECUSADO', convidado_por_nome: 'Ana Prado', expira_em: addDays(T, -20), respondido_em: addDays(T, -25) + 'T08:00:00', criado_em: addDays(T, -28) + 'T08:00:00' },
+  ];
+  const sitio = baseSpace('ws_sitio', 'Sítio dos Prado', 'editor');
+  sitio.membros = [{ usuario_id: 'u_raf', email: 'rafael.prado@exemplo.com', nome: 'Rafael Prado', papel: 'admin' }];
+  sitio.recursos.push({ id: 'rs_cc', tipo: 'CONTA', nome: 'Conta do sítio', instituicao: 'Banco Aurora', tipo_conta: 'CORRENTE', status: 'ATIVO', versao: 1, versao_recurso: 1, saldo_inicial: 900 });
+  criarLanc(sitio, { tipo: 'ENTRADA', descricao: 'Saldo inicial', valor_bruto: 900, data_evento: addDays(T, -40), status: 'EFETIVADO', recurso_id: 'rs_cc' }, { origem: 'SALDO_INICIAL', seed: true });
+  const viagem = baseSpace('ws_viagem', 'Rateio da viagem', 'leitura');
+  viagem.membros = [{ usuario_id: 'u_mar', email: 'marina.alves@exemplo.com', nome: 'Marina Alves', papel: 'admin' }];
+  DB.spacesConvite = { ws_sitio: sitio, ws_viagem: viagem };
+  DB.convitesRecebidos = [
+    { id: 'cv_r1', espaco_id: 'ws_sitio', espaco_nome: 'Sítio dos Prado', email: DB.usuario.email, papel: 'editor', status: 'PENDENTE', convidado_por_nome: 'Rafael Prado', expira_em: addDays(T, 11), respondido_em: null, criado_em: addDays(T, -0) + 'T08:05:00' },
+    { id: 'cv_r2', espaco_id: 'ws_viagem', espaco_nome: 'Rateio da viagem', email: DB.usuario.email, papel: 'leitura', status: 'PENDENTE', convidado_por_nome: 'Marina Alves', expira_em: addDays(T, 2), respondido_em: null, criado_em: addDays(T, -1) + 'T16:40:00' },
+  ];
+  DB.notificacoes = [
+    { id: 'nt1', tipo: 'CONVITE_RECEBIDO', titulo: 'Convite para o espaço Sítio dos Prado', texto: 'Rafael Prado convidou você como editor.', lida: false, ref_id: 'cv_r1', espaco_id: 'ws_sitio', criada_em: addDays(T, -0) + 'T08:05:00' },
+    { id: 'nt2', tipo: 'CONVITE_RECEBIDO', titulo: 'Convite para o espaço Rateio da viagem', texto: 'Marina Alves convidou você como leitura.', lida: false, ref_id: 'cv_r2', espaco_id: 'ws_viagem', criada_em: addDays(T, -1) + 'T16:40:00' },
+    { id: 'nt3', tipo: 'PAPEL_ALTERADO', titulo: 'Seu papel mudou', texto: 'Agora você é editor no espaço Apartamento da praia.', lida: false, ref_id: null, espaco_id: 'ws_praia', criada_em: addDays(T, -2) + 'T12:30:00' },
+    { id: 'nt4', tipo: 'CONVITE_ACEITO', titulo: 'Convite aceito', texto: 'Carla Souza aceitou seu convite para o espaço Casa.', lida: true, ref_id: 'cv_e3', espaco_id: 'ws_casa', criada_em: addDays(T, -6) + 'T20:00:00' },
+    { id: 'nt5', tipo: 'CONVITE_RECUSADO', titulo: 'Convite recusado', texto: 'Dido não aceitou seu convite para o espaço Casa.', lida: true, ref_id: 'cv_e4', espaco_id: 'ws_casa', criada_em: addDays(T, -25) + 'T08:00:00' },
+  ];
 }
 
 // ---------- relatórios ----------
@@ -581,7 +618,7 @@ export function amostraNota() {
 }
 
 // ---------- rotas ----------
-const ADMIN_WS = new Set(['ws.renomear', 'ws.resumo', 'ws.arquivar', 'membros.listar', 'membros.convidar', 'membros.remover', 'exportar.espaco', 'config.salvar', 'integridade.verificar']);
+const ADMIN_WS = new Set(['ws.renomear', 'ws.resumo', 'ws.arquivar', 'membros.listar', 'membros.convidar', 'membros.remover', 'convites.enviados', 'convites.cancelar', 'exportar.espaco', 'config.salvar', 'integridade.verificar']);
 const LEITURA_WRITES = new Set(['precos.confirmar', 'denuncias.criar', 'perfil.salvar', 'ws.criar', 'ws.listar', 'ws.arquivados', 'ws.desarquivar']);
 const RANK = { leitura: 1, editor: 2, admin: 3 };
 const R = {
@@ -589,7 +626,7 @@ const R = {
   'auth.confirmar': ({ email, codigo }) => { if (!/^\d{6}$/.test(codigo || '') || codigo === '000000') fail('Código inválido ou expirado.'); DB.usuario.email = email; DB.logado = true; flags.expirar = false; sset(FK, flags); return { token: 'demo.' + Math.random().toString(36).slice(2), email }; },
   'sistema.iniciar': () => { flags.semBanco = false; sset(FK, flags); return { banco: 'Nexora — Banco de dados (demonstração)', usuario: DB.usuario }; },
   'ws.listar': () => DB.spaces.map((s) => ({ id: s.id, nome: s.nome, papel: s.papel })),
-  'ws.criar': ({ nome }) => { if (!String(nome || '').trim()) fail('Dê um nome ao espaço.'); const S = baseSpace(nid('ws'), nome.trim(), 'admin'); S.produtos = []; S.listaItens = []; DB.spaces.push(S); return { id: S.id, nome: S.nome }; },
+  'ws.criar': ({ nome }) => { if (!String(nome || '').trim()) fail('Dê um nome ao espaço.'); flags.contaNova = false; sset(FK, flags); const S = baseSpace(nid('ws'), nome.trim(), 'admin'); S.produtos = []; S.listaItens = []; DB.spaces.push(S); return { id: S.id, nome: S.nome }; },
   'ws.resumo': (p, { S }) => {
     const conteudo = {}; ['recursos', 'lancamentos', 'recorrencias', 'planejamentos', 'produtos', 'lojas', 'listas', 'sessoes', 'notas'].forEach((k) => { if ((S[k] || []).length) conteudo[k] = S[k].length; });
     return { vazio: !Object.keys(conteudo).length, lancamentos: (S.lancamentos || []).length, conteudo, membros: S.membros.length, outros_espacos: DB.spaces.filter((x) => x.id !== S.id).length };
@@ -606,7 +643,48 @@ const R = {
   },
   'ws.renomear': ({ nome }, { S }) => { if (!String(nome || '').trim()) fail('Dê um nome ao espaço.'); S.nome = nome.trim(); return { id: S.id, nome: S.nome }; },
   'membros.listar': (p, { S }) => clone(S.membros),
-  'membros.convidar': ({ email, papel }, { S }) => { if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email || '')) fail('Confira o e-mail.'); if (!RANK[papel]) fail('Escolha o papel.'); const ex = S.membros.find((m) => m.email === email); if (ex) ex.papel = papel; else S.membros.push({ usuario_id: nid('u'), email, nome: '', papel }); return { email, papel }; },
+  'membros.convidar': ({ email, papel }, { S }) => {
+    email = String(email || '').trim().toLowerCase();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) fail('Confira o e-mail.');
+    if (!RANK[papel]) fail('Escolha o papel.');
+    const ex = S.membros.find((m) => m.email === email);
+    if (ex) {
+      if (ex.papel === 'admin' && papel !== 'admin' && S.membros.filter((m) => m.papel === 'admin').length < 2) fail('O espaço precisa de ao menos um administrador.');
+      ex.papel = papel;
+      notificar(email, { tipo: 'PAPEL_ALTERADO', titulo: 'Seu papel mudou', texto: `Agora você é ${PAPEL_TXT[papel]} no espaço ${S.nome}.`, espaco_id: S.id });
+      return { email, papel, status: 'MEMBRO' };
+    }
+    const conta_existe = (DB.admin.usuarios || []).some((u) => u.email === email);
+    if (!DB.admin.cadastro_aberto && !conta_existe) fail('O cadastro de novos usuários está fechado: só é possível convidar quem já tem cadastro.');
+    S.convites = S.convites || [];
+    const expira_em = addDays(T, 14);
+    let cv = S.convites.find((c) => c.email === email && c.status === 'PENDENTE');
+    if (cv) { cv.papel = papel; cv.expira_em = expira_em; cv.criado_em = now(); }
+    else { cv = { id: nid('cv'), espaco_id: S.id, espaco_nome: S.nome, email, papel, status: 'PENDENTE', convidado_por_nome: DB.usuario.nome, expira_em, respondido_em: null, criado_em: now() }; S.convites.push(cv); }
+    const email_enviado = !/sememail/.test(email);
+    if (conta_existe) notificar(email, { tipo: 'CONVITE_RECEBIDO', titulo: `Convite para o espaço ${S.nome}`, texto: `${DB.usuario.nome} convidou você como ${PAPEL_TXT[papel]}.`, ref_id: cv.id, espaco_id: S.id });
+    return { email, papel, status: 'PENDENTE', convite_id: cv.id, expira_em, conta_existe, email_enviado };
+  },
+  'convites.enviados': (p, { S }) => (S.convites || []).map((c) => ({ ...clone(c), status: c.status === 'PENDENTE' && c.expira_em < T ? 'EXPIRADO' : c.status })).sort((a, b) => (a.criado_em < b.criado_em ? 1 : -1)),
+  'convites.cancelar': ({ id }, { S }) => { const c = (S.convites || []).find((x) => x.id === id) || fail('Convite não encontrado.'); if (c.status !== 'PENDENTE') fail('Só dá para cancelar convites pendentes.'); c.status = 'CANCELADO'; c.respondido_em = now(); return { id, status: 'CANCELADO' }; },
+  'convites.recebidos': () => (DB.convitesRecebidos || []).filter((c) => c.status === 'PENDENTE' && c.expira_em >= T).map(clone).sort((a, b) => (a.criado_em < b.criado_em ? 1 : -1)),
+  'convites.aceitar': ({ id }) => {
+    const cv = (DB.convitesRecebidos || []).find((c) => c.id === id);
+    if (!cv || cv.status !== 'PENDENTE') fail('Este convite não está mais disponível.');
+    if (cv.expira_em < T) { cv.status = 'EXPIRADO'; fail('Este convite expirou. Peça um novo a quem convidou.'); }
+    cv.status = 'ACEITO'; cv.respondido_em = now();
+    flags.contaNova = false; sset(FK, flags);
+    let S = DB.spaces.find((s) => s.id === cv.espaco_id);
+    if (!S) { S = (DB.spacesConvite || {})[cv.espaco_id] || baseSpace(cv.espaco_id, cv.espaco_nome, cv.papel); if (DB.spacesConvite) delete DB.spacesConvite[cv.espaco_id]; DB.spaces.push(S); }
+    S.papel = cv.papel;
+    if (!S.membros.some((m) => m.email === DB.usuario.email)) S.membros.push({ usuario_id: DB.usuario.id, email: DB.usuario.email, nome: DB.usuario.nome, papel: cv.papel });
+    (DB.notificacoes || []).forEach((n) => { if (n.ref_id === id) n.lida = true; });
+    return { espaco_id: S.id, espaco_nome: S.nome, papel: cv.papel };
+  },
+  'convites.recusar': ({ id }) => { const cv = (DB.convitesRecebidos || []).find((c) => c.id === id); if (!cv || cv.status !== 'PENDENTE') fail('Este convite não está mais disponível.'); cv.status = 'RECUSADO'; cv.respondido_em = now(); (DB.notificacoes || []).forEach((n) => { if (n.ref_id === id) n.lida = true; }); return { id, status: 'RECUSADO' }; },
+  'notificacoes.listar': ({ so_nao_lidas, limite } = {}) => { const all = (DB.notificacoes || []).slice().sort((a, b) => (a.criada_em < b.criada_em ? 1 : -1)); const itens = (so_nao_lidas ? all.filter((n) => !n.lida) : all).slice(0, Math.min(100, limite || 30)).map(clone); return { itens, nao_lidas: all.filter((n) => !n.lida).length, total: all.length }; },
+  'notificacoes.contar': () => ({ nao_lidas: (DB.notificacoes || []).filter((n) => !n.lida).length }),
+  'notificacoes.marcar_lida': ({ id, todas }) => { let marcadas = 0; (DB.notificacoes || []).forEach((n) => { if ((todas || n.id === id) && !n.lida) { n.lida = true; marcadas++; } }); return { marcadas, nao_lidas: (DB.notificacoes || []).filter((n) => !n.lida).length }; },
   'membros.remover': ({ usuario_id }, { S }) => { const m = S.membros.find((x) => x.usuario_id === usuario_id) || fail('Pessoa não encontrada.'); if (m.papel === 'admin' && S.membros.filter((x) => x.papel === 'admin').length < 2) fail('O espaço precisa de ao menos uma pessoa admin.'); S.membros = S.membros.filter((x) => x !== m); return { ok: true }; },
   'perfil.salvar': ({ nome }) => { if (!String(nome || '').trim()) fail('Informe seu nome.'); DB.usuario.nome = nome.trim(); return { nome: DB.usuario.nome }; },
   bootstrap: (p, { S }) => {
@@ -995,7 +1073,7 @@ function estornar(S, l, motivo, data, seed) {
 export async function handle(action, p) {
   if (!DB) seed();
   const [a, b] = flags.lento ? [1000, 3000] : (window.NEXORA_CONFIG || {}).latenciaDemo || [300, 1100];
-  const write = !/listar|detalhe|historico|situacao|relatorios|bootstrap|porGtin|imagens|proximas|compartilhados|evolucao|alertas|minha|ler|interpretar|painel|catalogo|denuncias$/.test(action);
+  const write = !/listar|detalhe|historico|situacao|relatorios|bootstrap|porGtin|imagens|proximas|compartilhados|evolucao|alertas|minha|ler|interpretar|painel|catalogo|contar|recebidos|enviados|denuncias$/.test(action);
   await sleep(a + Math.random() * (b - a) * (write ? 1.6 : 1) + (flags.lento && write ? 2000 : 0));
   if (flags.offline || !navigator.onLine) throw new TypeError('offline');
   if (flags.falhar) { flags.falhar = false; sset(FK, flags); throw new TypeError('falha simulada'); }
@@ -1003,8 +1081,10 @@ export async function handle(action, p) {
   if (!pub && (!p._tk || flags.expirar)) return { ok: false, error: 'Sua sessão terminou. Entre de novo.', codigo: 'LOGIN' };
   if (flags.semBanco && action !== 'sistema.iniciar' && !pub) return { ok: false, error: 'O banco de dados ainda não foi criado.', codigo: 'SEM_BANCO' };
   if (p._rid && DB.rids[p._rid]) return { ...clone(DB.rids[p._rid]), replay: true };
-  const S = DB.spaces.find((s) => s.id === p._ws) || DB.spaces[0];
-  if (!S && !pub && !['ws.criar', 'ws.listar', 'perfil.salvar'].includes(action)) return { ok: false, error: 'Você ainda não tem um espaço.', codigo: 'SEM_ESPACO' };
+  let S = DB.spaces.find((s) => s.id === p._ws) || DB.spaces[0];
+  if (flags.contaNova) S = null;
+  const SEM_ESPACO_OK = ['ws.criar', 'ws.listar', 'perfil.salvar', 'convites.recebidos', 'convites.aceitar', 'convites.recusar', 'notificacoes.listar', 'notificacoes.contar', 'notificacoes.marcar_lida'];
+  if (!S && !pub && !SEM_ESPACO_OK.includes(action)) return { ok: false, error: 'Você ainda não tem um espaço.', codigo: 'SEM_ESPACO' };
   const fn = R[action];
   if (!fn) return { ok: false, error: 'Ação desconhecida.', codigo: '' };
   if (action.startsWith('admin.') && DB.usuario.papel_plataforma !== 'admin') return { ok: false, error: 'Acesso restrito à administração.', codigo: '' };

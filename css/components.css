@@ -431,3 +431,16 @@ textarea.input { padding: var(--s3) var(--s4); min-height: 120px; resize: vertic
   .donut-wrap { grid-template-columns: 220px minmax(0, 1fr); }
 }
 @media (hover: none) { .row[role="button"]:hover { background: var(--surface); } .menu-item:hover, .pick-item:hover { background: transparent; } .row.is-late[role="button"]:hover { background: var(--out-soft); } }
+
+/* sino de notificações */
+.bell { position: relative; }
+.bell-count { position: absolute; min-width: var(--s5); height: var(--s5); padding: 0 calc(var(--s1) + var(--s0)); border-radius: var(--r-pill); background: var(--out); color: oklch(0.99 0.01 28); font-size: var(--t-2xs); font-weight: var(--w-b); line-height: 1; display: inline-flex; align-items: center; justify-content: center; box-shadow: 0 0 0 var(--bw-2) var(--bg); pointer-events: none; }
+.bell--top { color: var(--ink-2); }
+.bell--top .bell-count { top: var(--s1); right: var(--s1); }
+.bell--side { position: relative; justify-content: center; }
+.bell--side .bell-count { top: var(--s1); right: var(--s2); box-shadow: 0 0 0 var(--bw-2) var(--surface); }
+@media (min-width: 1100px) {
+  .bell--side { justify-content: flex-start; }
+  .bell--side .side-label { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bell--side .bell-count { position: static; margin-left: auto; box-shadow: none; }
+}
