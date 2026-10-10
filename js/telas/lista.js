@@ -64,7 +64,7 @@ export default async function lista(ctx, id) {
     if (!ed) return r;
     return swipeable(r, { right: { label: i.comprado ? 'Voltar' : 'Comprado', icon: i.comprado ? 'undo' : 'check', tone: 'in', run: () => set(i, { comprado: !i.comprado }) }, left: { label: 'Remover', icon: 'x', tone: 'out', run: () => remover(i) } });
   }
-  async function set(i, p) { try { await call('listas.item.atualizar', { id: i.id, ...p }, { rid: uuid() }); Object.assign(i, p); draw(); reload(); }   // reload: o total estimado do topo depende do que falta comprar catch (e) { toast(e.message, { tone: 'danger' }); } }
+  async function set(i, p) { try { await call('listas.item.atualizar', { id: i.id, ...p }, { rid: uuid() }); Object.assign(i, p); draw(); reload(); } catch (e) { toast(e.message, { tone: 'danger' }); } }   // reload: o total estimado do topo depende do que falta comprar
   async function remover(i) {
     d.itens = d.itens.filter((x) => x !== i); draw();
     const r = await undoable(`“${i.descricao}” removido`, () => call('listas.item.atualizar', { id: i.id, remover: true }, { rid: uuid() }), { delay: 4000 });
