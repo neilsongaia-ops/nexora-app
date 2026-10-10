@@ -317,3 +317,9 @@ a.tile:active { transform: var(--press); }
 .invite-exp .ico { width: var(--ico-sm); height: var(--ico-sm); }
 .invite-actions { display: flex; gap: var(--s2); }
 .invite-actions .btn { flex: 1; }
+
+/* preferências de avisos */
+.notif-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); flex-wrap: wrap; width: 100%; }
+.pref .toggle-sub { text-wrap: pretty; }
+.pref-state { flex: none; min-width: 9ch; text-align: right; font-size: var(--t-xs); color: var(--ink-3); }
+.pref[aria-checked="true"] .pref-state { color: var(--brand-strong); font-weight: var(--w-s); }

@@ -1,11 +1,11 @@
-// Ajustes: perfil, aparência, espaço e pessoas, categorias, preços e deslocamento, reputação, exportar, sair
+// Ajustes: perfil, aparência, notificações, espaço e pessoas, categorias, preços e deslocamento, reputação, exportar, sair
 import { h, money, uuid, emit, ls, dmy } from '../util.js';
 import { icon } from '../icons.js';
 import { DEMO, call, load, clearSession, invalidate, session } from '../api.js';
 import { store, can, loadBoot, catNome } from '../store.js';
 import { openSheet, openMenu, pick, confirmSheet } from '../ui/sheet.js';
 import { toast } from '../ui/toast.js';
-import { refreshNotif } from '../ui/notificacoes.js';
+import { refreshNotif, prefsLista } from '../ui/notificacoes.js';
 import { abrirConvitesEnviados } from './convites.js';
 import { geolocate } from '../ui/media.js';
 import { segmented, card, row, badge, empty, errorState, skelRows, sectionHead, btn, textField, moneyField, toggle, formError, avatar, kv, tip } from '../ui/components.js';
@@ -24,6 +24,7 @@ export default async function ajustes(ctx) {
       h('div', { class: 'set-group' }, row({ lead: avatar(u.nome || u.email), title: u.nome || 'Seu nome', sub: u.email, trail: icon('edit', 'muted'), onClick: perfil })),
       sectionHead('Aparência'),
       h('div', { class: 'set-group' }, h('div', { class: 'set-row' }, segmented([{ value: 'claro', label: 'Claro', icon: 'sun' }, { value: 'escuro', label: 'Escuro', icon: 'moon' }, { value: 'auto', label: 'Automático', icon: 'auto' }], { value: getTema(), aria: 'Tema', cls: 'theme-pick', onChange: (v) => applyTema(v) }))),
+      sectionHead('Notificações'), prefsLista(),
       sectionHead('Espaço: ' + b.espaco.nome),
       h('div', { class: 'set-group' },
         admin ? nav('edit', 'Renomear espaço', null, renomearEspaco) : null,

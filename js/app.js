@@ -141,6 +141,15 @@ export async function irParaPessoas(espaco_id) {
   go('/ajustes');
 }
 
+// Abre uma tela no espaço indicado (troca de espaço antes, se preciso). Usado pelos avisos do sino.
+export async function irPara(path, espaco_id) {
+  if (espaco_id && espaco_id !== session.ws) {
+    await changeSpace(espaco_id);
+    if (!store.boot || !store.boot.espaco || store.boot.espaco.id !== espaco_id) return;
+  }
+  go(path);
+}
+
 // ---------- roteamento ----------
 async function route() {
   if (!store.boot) return;

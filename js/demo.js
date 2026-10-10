@@ -2,7 +2,7 @@
 import { isoLocal, addDays, addMonths, diffDays, r2, sleep, monthStart, monthEnd } from './util.js';
 
 const T = isoLocal(new Date());
-const KEY = 'nx.demo.v6', FK = 'nx.demo.flags';
+const KEY = 'nx.demo.v7', FK = 'nx.demo.flags';
 const sget = (k) => { try { return JSON.parse(sessionStorage.getItem(k)); } catch { return null; } };
 const sset = (k, v) => { try { sessionStorage.setItem(k, JSON.stringify(v)); } catch { /* cheio */ } };
 const flags = Object.assign({ lento: false, falhar: false, conflito: false, expirar: false, offline: false, semBanco: false, vazio: false, contaNova: false }, sget(FK) || {});
@@ -20,9 +20,20 @@ const fail = (msg, codigo = '') => { const e = new Error(msg); e.codigo = codigo
 const norm = (s) => String(s || '').normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
 const now = () => new Date().toISOString().slice(0, 19);
 const PAPEL_TXT = { leitura: 'leitura', editor: 'editor', admin: 'administrador' };
+/* Tipos de aviso configuráveis (convite e papel são sempre entregues e não entram aqui). */
+const PREF_TIPOS = [
+  { tipo: 'LANCAMENTO_MEMBRO', titulo: 'Lançamentos de outras pessoas', descricao: 'Quando alguém do espaço lança uma receita ou despesa.' },
+  { tipo: 'FATURA_VENCENDO', titulo: 'Fatura perto de vencer', descricao: 'Até 3 dias antes do vencimento.' },
+  { tipo: 'RESERVA_80', titulo: 'Reserva em 80%', descricao: 'Quando uma reserva chega a 80% do limite.' },
+  { tipo: 'RESERVA_100', titulo: 'Reserva no limite', descricao: 'Quando uma reserva chega a 100% do limite.' },
+  { tipo: 'QUEDA_PRECO', titulo: 'Queda de preço', descricao: 'Produto que você compra 10% mais barato em outra loja.' },
+];
+const prefsDe = () => DB.prefsNotif || (DB.prefsNotif = {});
+const prefsView = () => ({ tipos: PREF_TIPOS.map((t) => ({ ...t, ativo: prefsDe()[t.tipo] !== false })) });
 /* Fila de notificações da PESSOA logada (no demo, só Ana tem feed local). */
 function notificar(email, n) {
   if (!DB.notificacoes || email !== DB.usuario.email) return null;
+  if (prefsDe()[n.tipo] === false) return null;
   const item = { id: nid('nt'), lida: false, ref_id: null, espaco_id: null, criada_em: now(), ...n };
   DB.notificacoes.unshift(item);
   return item;
@@ -453,6 +464,12 @@ function seedConvites() {
     { id: 'nt3', tipo: 'PAPEL_ALTERADO', titulo: 'Seu papel mudou', texto: 'Agora você é editor no espaço Apartamento da praia.', lida: false, ref_id: null, espaco_id: 'ws_praia', criada_em: addDays(T, -2) + 'T12:30:00' },
     { id: 'nt4', tipo: 'CONVITE_ACEITO', titulo: 'Convite aceito', texto: 'Carla Souza aceitou seu convite para o espaço Casa.', lida: true, ref_id: 'cv_e3', espaco_id: 'ws_casa', criada_em: addDays(T, -6) + 'T20:00:00' },
     { id: 'nt5', tipo: 'CONVITE_RECUSADO', titulo: 'Convite recusado', texto: 'Dido não aceitou seu convite para o espaço Casa.', lida: true, ref_id: 'cv_e4', espaco_id: 'ws_casa', criada_em: addDays(T, -25) + 'T08:00:00' },
+    { id: 'nt6', tipo: 'LANCAMENTO_MEMBRO', titulo: 'Rafael Prado fez 3 lançamentos em Casa', texto: 'O último: Farmácia, R$ 48,90.', lida: false, ref_id: 'lanc:u_raf:ws_casa', espaco_id: 'ws_casa', criada_em: T + 'T10:20:00' },
+    { id: 'nt7', tipo: 'FATURA_VENCENDO', titulo: 'Fatura Cartão Aurora vence em 2 dias', texto: 'Pague até o vencimento para evitar juros.', lida: false, ref_id: 'fat:r_k1', espaco_id: 'ws_casa', criada_em: T + 'T06:00:00' },
+    { id: 'nt8', tipo: 'RESERVA_80', titulo: 'Lazer e passeios chegou a 80%', texto: 'Você já usou 80% do limite desta reserva.', lida: false, ref_id: 'res:pl2:80:180', espaco_id: 'ws_casa', criada_em: T + 'T06:00:00' },
+    { id: 'nt9', tipo: 'QUEDA_PRECO', titulo: 'Café torrado e moído 15% mais barato', texto: 'R$ 16,90 em outra loja; você costuma pagar R$ 19,90.', lida: false, ref_id: 'prec:p3:16.9:' + addDays(T, -1), espaco_id: 'ws_casa', criada_em: addDays(T, -1) + 'T06:00:00' },
+    { id: 'nt10', tipo: 'RESERVA_100', titulo: 'Transporte chegou ao limite', texto: 'A reserva usou 100% do valor planejado.', lida: true, ref_id: 'res:pl3:100:750', espaco_id: 'ws_casa', criada_em: addDays(T, -3) + 'T06:00:00' },
+    { id: 'nt11', tipo: 'LANCAMENTO_MEMBRO', titulo: 'Lia Prado lançou uma despesa em Apartamento da praia', texto: 'Condomínio, R$ 650,00.', lida: true, ref_id: 'lanc:u_lia:ws_praia', espaco_id: 'ws_praia', criada_em: addDays(T, -4) + 'T19:10:00' },
   ];
 }
 
@@ -619,7 +636,7 @@ export function amostraNota() {
 
 // ---------- rotas ----------
 const ADMIN_WS = new Set(['ws.renomear', 'ws.resumo', 'ws.arquivar', 'membros.listar', 'membros.convidar', 'membros.remover', 'convites.enviados', 'convites.cancelar', 'exportar.espaco', 'config.salvar', 'integridade.verificar']);
-const LEITURA_WRITES = new Set(['precos.confirmar', 'denuncias.criar', 'perfil.salvar', 'ws.criar', 'ws.listar', 'ws.arquivados', 'ws.desarquivar']);
+const LEITURA_WRITES = new Set(['notificacoes.preferencias_salvar', 'precos.confirmar', 'denuncias.criar', 'perfil.salvar', 'ws.criar', 'ws.listar', 'ws.arquivados', 'ws.desarquivar']);
 const RANK = { leitura: 1, editor: 2, admin: 3 };
 const R = {
   'auth.pedir': ({ email }) => { if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email || '')) fail('Confira o e-mail.'); return { enviado: true, validade_min: 10 }; },
@@ -683,6 +700,13 @@ const R = {
   },
   'convites.recusar': ({ id }) => { const cv = (DB.convitesRecebidos || []).find((c) => c.id === id); if (!cv || cv.status !== 'PENDENTE') fail('Este convite não está mais disponível.'); cv.status = 'RECUSADO'; cv.respondido_em = now(); (DB.notificacoes || []).forEach((n) => { if (n.ref_id === id) n.lida = true; }); return { id, status: 'RECUSADO' }; },
   'notificacoes.listar': ({ so_nao_lidas, limite } = {}) => { const all = (DB.notificacoes || []).slice().sort((a, b) => (a.criada_em < b.criada_em ? 1 : -1)); const itens = (so_nao_lidas ? all.filter((n) => !n.lida) : all).slice(0, Math.min(100, limite || 30)).map(clone); return { itens, nao_lidas: all.filter((n) => !n.lida).length, total: all.length }; },
+  'notificacoes.preferencias': () => prefsView(),
+  'notificacoes.preferencias_salvar': ({ tipos } = {}) => {
+    if (!tipos || typeof tipos !== 'object' || Array.isArray(tipos)) fail('Informe os tipos de aviso.');
+    for (const k of Object.keys(tipos)) if (!PREF_TIPOS.some((t) => t.tipo === k)) fail('Tipo de aviso inválido: ' + k + '.');
+    for (const k of Object.keys(tipos)) prefsDe()[k] = !!tipos[k];
+    return prefsView();
+  },
   'notificacoes.contar': () => ({ nao_lidas: (DB.notificacoes || []).filter((n) => !n.lida).length }),
   'notificacoes.marcar_lida': ({ id, todas }) => { let marcadas = 0; (DB.notificacoes || []).forEach((n) => { if ((todas || n.id === id) && !n.lida) { n.lida = true; marcadas++; } }); return { marcadas, nao_lidas: (DB.notificacoes || []).filter((n) => !n.lida).length }; },
   'membros.remover': ({ usuario_id }, { S }) => { const m = S.membros.find((x) => x.usuario_id === usuario_id) || fail('Pessoa não encontrada.'); if (m.papel === 'admin' && S.membros.filter((x) => x.papel === 'admin').length < 2) fail('O espaço precisa de ao menos uma pessoa admin.'); S.membros = S.membros.filter((x) => x !== m); return { ok: true }; },
@@ -1073,7 +1097,7 @@ function estornar(S, l, motivo, data, seed) {
 export async function handle(action, p) {
   if (!DB) seed();
   const [a, b] = flags.lento ? [1000, 3000] : (window.NEXORA_CONFIG || {}).latenciaDemo || [300, 1100];
-  const write = !/listar|detalhe|historico|situacao|relatorios|bootstrap|porGtin|imagens|proximas|compartilhados|evolucao|alertas|minha|ler|interpretar|painel|catalogo|contar|recebidos|enviados|denuncias$/.test(action);
+  const write = !/listar|detalhe|historico|situacao|relatorios|bootstrap|porGtin|imagens|proximas|compartilhados|evolucao|alertas|minha|ler|interpretar|painel|catalogo|contar|recebidos|enviados|preferencias$|denuncias$/.test(action);
   await sleep(a + Math.random() * (b - a) * (write ? 1.6 : 1) + (flags.lento && write ? 2000 : 0));
   if (flags.offline || !navigator.onLine) throw new TypeError('offline');
   if (flags.falhar) { flags.falhar = false; sset(FK, flags); throw new TypeError('falha simulada'); }
@@ -1083,7 +1107,7 @@ export async function handle(action, p) {
   if (p._rid && DB.rids[p._rid]) return { ...clone(DB.rids[p._rid]), replay: true };
   let S = DB.spaces.find((s) => s.id === p._ws) || DB.spaces[0];
   if (flags.contaNova) S = null;
-  const SEM_ESPACO_OK = ['ws.criar', 'ws.listar', 'perfil.salvar', 'convites.recebidos', 'convites.aceitar', 'convites.recusar', 'notificacoes.listar', 'notificacoes.contar', 'notificacoes.marcar_lida'];
+  const SEM_ESPACO_OK = ['ws.criar', 'ws.listar', 'perfil.salvar', 'convites.recebidos', 'convites.aceitar', 'convites.recusar', 'notificacoes.listar', 'notificacoes.contar', 'notificacoes.marcar_lida', 'notificacoes.preferencias', 'notificacoes.preferencias_salvar'];
   if (!S && !pub && !SEM_ESPACO_OK.includes(action)) return { ok: false, error: 'Você ainda não tem um espaço.', codigo: 'SEM_ESPACO' };
   const fn = R[action];
   if (!fn) return { ok: false, error: 'Ação desconhecida.', codigo: '' };
