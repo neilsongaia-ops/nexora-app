@@ -1,6 +1,6 @@
 // Service worker simples: abre o shell offline. Dados sempre vêm da API (POST, não cacheado).
 // Outros domínios (mapa do OpenStreetMap, Leaflet no unpkg, busca Nominatim, fontes, CDNs) passam direto pela rede, sem cache.
-const V = 'nexora-shell-v24';
+const V = 'nexora-shell-v25';
 const SHELL = ['./', './index.html', './config.js', './manifest.webmanifest', './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png',
   './css/tokens.css', './css/base.css', './css/components.css', './css/telas.css',
   './js/app.js', './js/api.js', './js/util.js', './js/icons.js', './js/store.js', './js/tema.js', './js/demo.js',

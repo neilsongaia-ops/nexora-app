@@ -74,7 +74,7 @@ export function escolherNoMapa({ latitude, longitude, busca = '', title = 'Escol
   return new Promise((res) => {
     let out = null, map = null, mk = null, L = null, ro = null, nomeBusca = null;
     let pos = latitude != null && longitude != null ? [Number(latitude), Number(longitude)] : null;
-    const stage = h('div', { class: 'map-stage', tabindex: '-1' }, h('div', { class: 'map-load', 'aria-hidden': 'true' }, h('span', { class: 'ptr-spin' })));
+    const stage = h('div', { class: 'map-stage', tabindex: '-1', 'data-no-sheet-drag': '' }, h('div', { class: 'map-load', 'aria-hidden': 'true' }, h('span', { class: 'ptr-spin' })));
     ['touchstart', 'touchmove', 'touchend'].forEach((ev) => stage.addEventListener(ev, (e) => e.stopPropagation(), { passive: true }));
     const coords = h('span', { class: 'map-coords num', 'aria-live': 'polite' });
     const q = h('input', { type: 'search', placeholder: 'Buscar endereço', 'aria-label': 'Buscar endereço', value: busca, enterkeyhint: 'search' });

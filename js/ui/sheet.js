@@ -126,7 +126,7 @@ function drag(panel, head, body, backdrop, s, snap, setOff) {
   head.addEventListener('pointerup', end);
   head.addEventListener('pointercancel', end);
   let ty = 0, tracking = false;
-  body.addEventListener('touchstart', (e) => { ty = e.touches[0].clientY; tracking = true; }, { passive: true });
+  body.addEventListener('touchstart', (e) => { ty = e.touches[0].clientY; tracking = !e.target.closest('[data-no-sheet-drag]'); }, { passive: true });
   body.addEventListener('touchmove', (e) => {
     if (!tracking) return;
     const y = e.touches[0].clientY, d = y - ty;
