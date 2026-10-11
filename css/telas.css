@@ -472,3 +472,35 @@ a.tile:active { transform: var(--press); }
 .map-where { display: flex; align-items: center; gap: var(--s2); font-size: var(--t-sm); color: var(--ink-2); min-width: 0; }
 .map-where .ico { flex: none; color: var(--brand); }
 .map-tools { display: flex; gap: var(--s2); flex-wrap: wrap; }
+
+/* Meu perfil (Fase 7) */
+.avatar { overflow: hidden; }
+.avatar.has-img { background: var(--surface-3); }
+.avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.avatar--xl { --avatar: 96px; font-size: var(--t-2xl); }
+.perfil { display: flex; flex-direction: column; gap: var(--s5); width: 100%; max-width: 560px; margin-inline: auto; }
+.perfil-head { display: flex; flex-direction: column; align-items: center; gap: var(--s1); text-align: center; padding-top: var(--s2); min-width: 0; }
+.perfil-skel { width: 96px; height: 96px; }
+.perfil-av { position: relative; display: grid; place-items: center; padding: 0; border: 0; background: none; border-radius: 50%; cursor: pointer; margin-bottom: var(--s2); }
+.perfil-av.is-busy { pointer-events: none; }
+.perfil-av.is-busy .avatar { opacity: .45; }
+.perfil-av.is-busy::after { content: ""; position: absolute; inset: -4px; border-radius: 50%; border: 3px solid var(--brand-soft); border-top-color: var(--brand); animation: perfil-gira .8s linear infinite; }
+@keyframes perfil-gira { to { transform: rotate(1turn); } }
+@media (prefers-reduced-motion: reduce) { .perfil-av.is-busy::after { animation-duration: 3s; } }
+.perfil-nome { font-size: var(--t-xl); font-weight: var(--w-b); overflow-wrap: anywhere; max-width: 100%; }
+.perfil-mail { font-size: var(--t-sm); color: var(--ink-3); overflow-wrap: anywhere; max-width: 100%; }
+.perfil-foto-acts { display: flex; gap: var(--s2); flex-wrap: wrap; justify-content: center; margin-top: var(--s2); }
+.perfil-foto-err:empty { display: none; }
+.cpf-priv { margin-left: auto; display: inline-flex; align-items: center; gap: var(--s1); font-size: var(--t-xs); color: var(--ink-3); white-space: nowrap; }
+.cpf-priv .ico { width: 14px; height: 14px; }
+.cpf-slot { display: flex; flex-direction: column; gap: var(--s2); }
+.cpf-box { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); flex-wrap: wrap; min-height: var(--tap); }
+.cpf-v { font-size: var(--t-lg, 1.125rem); font-weight: var(--w-s); letter-spacing: .03em; }
+.cpf-v.is-del { text-decoration: line-through; color: var(--ink-3); }
+.cpf-acts { display: flex; gap: var(--s1); flex-wrap: wrap; margin-left: auto; }
+.cpf-acts .btn { min-height: var(--tap); }
+.in-wrap--btn .input { padding-right: calc(var(--tap) + var(--s2)); }
+.in-act { position: absolute; right: var(--s1); }
+.input[readonly] { background: var(--surface-2); color: var(--ink-2); cursor: default; }
+.scan-stage.is-square { aspect-ratio: 1; width: 100%; max-width: 420px; margin-inline: auto; }
+.scan-video.is-mirror { transform: scaleX(-1); }

@@ -9,6 +9,13 @@ const flags = Object.assign({ lento: false, falhar: false, conflito: false, expi
 if (new URLSearchParams(location.search).get('lento') === '1') flags.lento = true;
 export const getFlags = () => ({ ...flags });
 export function setFlag(k, v) { flags[k] = v; sset(FK, flags); }
+// Perfil pessoal (Fase 7): fica fora de DB.usuario para nunca sair no bootstrap
+const PERFIL_EX = { cpf: '52998224725', telefone: '91988887777', nascimento: '', avatar: null };
+export function setPerfil(kind) {
+  if (!DB) seed();
+  DB.perfil = kind === 'vazio' ? { cpf: '', telefone: '', nascimento: '', avatar: null } : { ...PERFIL_EX };
+  save();
+}
 export function setDesloc(kind) {
   if (!DB) seed();
   DB.desl ||= {};
@@ -50,6 +57,13 @@ function notificar(email, n) {
 }
 function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 const gtin = (b12) => { let s = 0; for (let i = 0; i < 12; i++) s += Number(b12[11 - i]) * (i % 2 === 0 ? 3 : 1); return b12 + String((10 - (s % 10)) % 10); };
+const cpfOk = (c) => {
+  if (!/^\d{11}$/.test(c) || /^(\d)\1{10}$/.test(c)) return false;
+  const dv = (n) => { let t = 0; for (let i = 0; i < n; i++) t += Number(c[i]) * (n + 1 - i); const r = (t * 10) % 11; return r === 10 ? 0 : r; };
+  return dv(9) === Number(c[9]) && dv(10) === Number(c[10]);
+};
+const perfilDe = () => DB.perfil || (DB.perfil = { ...PERFIL_EX });
+const perfilView = () => { const pf = perfilDe(), c = pf.cpf; return { nome: DB.usuario.nome, email: DB.usuario.email, cpf_mascarado: c ? '***.' + c.slice(3, 6) + '.' + c.slice(6, 9) + '-**' : '', tem_cpf: !!c, telefone: pf.telefone || '', nascimento: pf.nascimento || '', avatar: pf.avatar || null }; };
 const dv11 = (s) => { let w = 2, t = 0; for (let i = s.length - 1; i >= 0; i--) { t += Number(s[i]) * w; w = w === 9 ? 2 : w + 1; } const r = t % 11; return r < 2 ? 0 : 11 - r; };
 
 // ---------- categorias ----------
@@ -855,7 +869,21 @@ const R = {
   'notificacoes.contar': () => ({ nao_lidas: (DB.notificacoes || []).filter((n) => !n.lida).length }),
   'notificacoes.marcar_lida': ({ id, todas }) => { let marcadas = 0; (DB.notificacoes || []).forEach((n) => { if ((todas || n.id === id) && !n.lida) { n.lida = true; marcadas++; } }); return { marcadas, nao_lidas: (DB.notificacoes || []).filter((n) => !n.lida).length }; },
   'membros.remover': ({ usuario_id }, { S }) => { const m = S.membros.find((x) => x.usuario_id === usuario_id) || fail('Pessoa não encontrada.'); if (m.papel === 'admin' && S.membros.filter((x) => x.papel === 'admin').length < 2) fail('O espaço precisa de ao menos uma pessoa admin.'); S.membros = S.membros.filter((x) => x !== m); return { ok: true }; },
-  'perfil.salvar': ({ nome }) => { if (!String(nome || '').trim()) fail('Informe seu nome.'); DB.usuario.nome = nome.trim(); return { nome: DB.usuario.nome }; },
+  'perfil.ler': () => perfilView(),
+  'perfil.cpf': () => ({ cpf: perfilDe().cpf || '' }),
+  'perfil.salvar': (p) => {
+    const pf = perfilDe(), dg = (s) => String(s == null ? '' : s).replace(/\D/g, '');
+    if (p.nome !== undefined) { const n = String(p.nome || '').trim(); if (!n) fail('Informe seu nome.'); if (n.length > 60) fail('O nome pode ter até 60 caracteres.'); DB.usuario.nome = n; }
+    if (p.cpf !== undefined) { const c = dg(p.cpf); if (c && !cpfOk(c)) fail('CPF inválido. Confira os números.'); pf.cpf = c; }
+    if (p.telefone !== undefined) { const t = dg(p.telefone); if (t && !/^\d{10,11}$/.test(t)) fail('Telefone inválido. Informe o DDD e o número.'); pf.telefone = t; }
+    if (p.nascimento !== undefined) {
+      const n = String(p.nascimento || '').trim();
+      if (n && !(/^\d{4}-\d{2}-\d{2}$/.test(n) && n >= '1900-01-01' && n <= T && new Date(n + 'T12:00:00').toISOString().slice(0, 10) === n)) fail('Data de nascimento inválida.');
+      pf.nascimento = n;
+    }
+    if (p.avatar !== undefined) { const a = p.avatar ? String(p.avatar) : ''; if (a && !(/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(a) && a.length <= 45000)) fail('Foto inválida ou grande demais.'); pf.avatar = a || null; }
+    return perfilView();
+  },
   bootstrap: (p, { S }) => {
     gerarRec(S, addDays(T, 35));
     const saldos = {};
@@ -1423,7 +1451,7 @@ function histView(S, x) {
 export async function handle(action, p) {
   if (!DB) seed();
   const [a, b] = flags.lento ? [1000, 3000] : (window.NEXORA_CONFIG || {}).latenciaDemo || [300, 1100];
-  const write = !/listar|detalhe|historico|situacao|relatorios|bootstrap|porGtin|imagens|proximas|compartilhados|evolucao|alertas|minha|ler|interpretar|painel|catalogo|contar|recebidos|enviados|preferencias$|denuncias$/.test(action);
+  const write = !/listar|detalhe|historico|situacao|relatorios|bootstrap|porGtin|imagens|proximas|compartilhados|evolucao|alertas|minha|ler|interpretar|painel|catalogo|contar|recebidos|enviados|preferencias$|denuncias$|cpf$/.test(action);
   await sleep(a + Math.random() * (b - a) * (write ? 1.6 : 1) + (flags.lento && write ? 2000 : 0));
   if (flags.offline || !navigator.onLine) throw new TypeError('offline');
   if (flags.falhar) { flags.falhar = false; sset(FK, flags); throw new TypeError('falha simulada'); }
@@ -1433,7 +1461,7 @@ export async function handle(action, p) {
   if (p._rid && DB.rids[p._rid]) return { ...clone(DB.rids[p._rid]), replay: true };
   let S = DB.spaces.find((s) => s.id === p._ws) || DB.spaces[0];
   if (flags.contaNova) S = null;
-  const SEM_ESPACO_OK = ['ws.criar', 'ws.listar', 'perfil.salvar', 'convites.recebidos', 'convites.aceitar', 'convites.recusar', 'notificacoes.listar', 'notificacoes.contar', 'notificacoes.marcar_lida', 'notificacoes.preferencias', 'notificacoes.preferencias_salvar'];
+  const SEM_ESPACO_OK = ['ws.criar', 'ws.listar', 'perfil.ler', 'perfil.cpf', 'perfil.salvar', 'convites.recebidos', 'convites.aceitar', 'convites.recusar', 'notificacoes.listar', 'notificacoes.contar', 'notificacoes.marcar_lida', 'notificacoes.preferencias', 'notificacoes.preferencias_salvar'];
   if (!S && !pub && !SEM_ESPACO_OK.includes(action)) return { ok: false, error: 'Você ainda não tem um espaço.', codigo: 'SEM_ESPACO' };
   const fn = R[action];
   if (!fn) return { ok: false, error: 'Ação desconhecida.', codigo: '' };
@@ -1445,7 +1473,7 @@ export async function handle(action, p) {
   let res;
   const snap = write ? JSON.stringify(DB) : null;
   try { res = { ok: true, data: clone(fn(p, { S })) }; } catch (e) { if (snap) DB = JSON.parse(snap); res = { ok: false, error: e.message, codigo: e.codigo || '' }; }
-  if (res.ok && p._rid) DB.rids[p._rid] = res;
+  if (res.ok && p._rid && action !== 'perfil.cpf') DB.rids[p._rid] = res;
   if (write) save();
   return res;
 }

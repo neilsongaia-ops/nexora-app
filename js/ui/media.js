@@ -1,4 +1,4 @@
-// Câmera (código de barras/QR), redução de foto, leitura de PDF (pdf.js) e geolocalização sob demanda.
+// Câmera (código de barras/QR), redução de foto (produto e perfil), leitura de PDF (pdf.js) e geolocalização sob demanda.
 import { h, haptic } from '../util.js';
 import { icon } from '../icons.js';
 import { openSheet } from './sheet.js';
@@ -100,9 +100,41 @@ export async function imageToThumb(file) {
   if (bmp.close) bmp.close();
   return encodeThumb(c);
 }
-export function chooseImage({ camera } = {}) {
+// Foto do perfil: quadrada (recorte central), ~256 px, WebP quando o navegador gera (senão JPEG), lado e qualidade
+// diminuem em passos até o data URL caber no limite da API.
+export function encodeAvatar(src) {
+  const cfg = window.NEXORA_CONFIG || {}, maxc = cfg.avatarMaxChars || 45000;
+  const lados = [256, 224, 192, 160, 128].filter((l) => l <= Math.max(src.width, 128));
+  for (const lado of lados) {
+    const c = document.createElement('canvas');
+    c.width = c.height = lado;
+    const cx = c.getContext('2d');
+    cx.imageSmoothingQuality = 'high';
+    cx.drawImage(src, 0, 0, lado, lado);
+    for (const q of [0.85, 0.72, 0.6, 0.48, 0.36]) {
+      let d = c.toDataURL('image/webp', q);
+      if (!d.startsWith('data:image/webp')) d = c.toDataURL('image/jpeg', q);
+      if (d.length <= maxc) return d;
+    }
+  }
+  throw new Error('A foto ficou grande demais. Tente outra.');
+}
+export async function imageToAvatar(file) {
+  let bmp;
+  try {
+    try { bmp = await createImageBitmap(file, { resizeWidth: 768, resizeQuality: 'medium' }); }
+    catch { bmp = await createImageBitmap(file); }
+  } catch { throw new Error('Não foi possível ler esta imagem.'); }
+  const s = Math.min(bmp.width, bmp.height), lado = Math.min(256, s);
+  const c = document.createElement('canvas');
+  c.width = c.height = lado;
+  c.getContext('2d').drawImage(bmp, Math.round((bmp.width - s) / 2), Math.round((bmp.height - s) / 2), s, s, 0, 0, lado, lado);
+  if (bmp.close) bmp.close();
+  return encodeAvatar(c);
+}
+export function chooseImage({ camera, facing = 'environment' } = {}) {
   return new Promise((res) => {
-    const i = h('input', { type: 'file', accept: 'image/*', capture: camera ? 'environment' : null });
+    const i = h('input', { type: 'file', accept: 'image/*', capture: camera ? facing : null });
     i.addEventListener('change', () => res(i.files[0] || null), { once: true });
     i.click();
   });
@@ -112,30 +144,31 @@ export function chooseImage({ camera } = {}) {
 // sistema. Isso evita que celulares com pouca memória encerrem a página enquanto a câmera externa está aberta (a página recarregava
 // e a foto se perdia). O quadro já é reduzido ao capturar.
 // Resolve: { dados } (miniatura pronta) | { file } (usuário preferiu a câmera do aparelho; o chamador reduz com imageToThumb) | null (cancelou).
-export function capturePhoto({ title = 'Tirar foto' } = {}) {
+// Opções da foto do perfil: square (recorte 1:1), side (lado em px), facing ('user' = câmera frontal), encode (codificador).
+export function capturePhoto({ title = 'Tirar foto', square = false, side: lado, facing = 'environment', encode = encodeThumb } = {}) {
   return new Promise((res) => {
-    const cfg = window.NEXORA_CONFIG || {}, side = cfg.imagemLado || 200;
+    const cfg = window.NEXORA_CONFIG || {}, side = lado || cfg.imagemLado || 200;
     let result = null, stream = null, taken = null;
-    const video = h('video', { class: 'scan-video', playsinline: true, muted: true, autoplay: true, 'aria-label': 'Câmera' });
+    const video = h('video', { class: 'scan-video' + (facing === 'user' ? ' is-mirror' : ''), playsinline: true, muted: true, autoplay: true, 'aria-label': 'Câmera' });
     const preview = h('img', { class: 'scan-video cap-preview', alt: 'Foto tirada', hidden: true });
-    const stage = h('div', { class: 'scan-stage' }, video, preview);
+    const stage = h('div', { class: 'scan-stage' + (square ? ' is-square' : '') }, video, preview);
     const status = h('p', { class: 'scan-status', 'aria-live': 'polite' });
     const stop = () => { stream && stream.getTracks().forEach((t) => t.stop()); stream = null; };
     const shoot = btn('Tirar foto', { icon: 'camera', size: 'lg', full: true, onClick: () => {
       if (video.readyState < 2 || !video.videoWidth) return;
-      const vw = video.videoWidth, vh = video.videoHeight, ar = 4 / 3;          // mesmo recorte 4:3 que a tela mostra
+      const vw = video.videoWidth, vh = video.videoHeight, ar = square ? 1 : 4 / 3;          // mesmo recorte que a tela mostra
       let sw = vw, sh = vh, sx = 0, sy = 0;
       if (vw / vh > ar) { sw = Math.round(vh * ar); sx = Math.round((vw - sw) / 2); } else { sh = Math.round(vw / ar); sy = Math.round((vh - sh) / 2); }
       const c = document.createElement('canvas'), k = Math.min(1, side / Math.max(sw, sh));
       c.width = Math.round(sw * k); c.height = Math.round(sh * k);
       c.getContext('2d').drawImage(video, sx, sy, sw, sh, 0, 0, c.width, c.height);
-      try { taken = encodeThumb(c); } catch (e) { status.textContent = e.message; return; }
+      try { taken = encode(c); } catch (e) { status.textContent = e.message; return; }
       haptic(15); stop(); video.hidden = true; preview.src = taken; preview.hidden = false;
       shoot.hidden = true; ok.hidden = false; again.hidden = false; status.textContent = '';
     } });
     const ok = btn('Usar esta foto', { icon: 'check', size: 'lg', full: true, onClick: () => { result = { dados: taken }; s.close(); } });
     const again = btn('Refazer', { kind: 'secondary', full: true, onClick: () => { taken = null; preview.hidden = true; ok.hidden = true; again.hidden = true; start(); } });
-    const device = btn('Usar a câmera do aparelho', { kind: 'secondary', full: true, icon: 'camera', onClick: async () => { const f = await chooseImage({ camera: true }); if (f) { result = { file: f }; s.close(); } } });
+    const device = btn('Usar a câmera do aparelho', { kind: 'secondary', full: true, icon: 'camera', onClick: async () => { const f = await chooseImage({ camera: true, facing }); if (f) { result = { file: f }; s.close(); } } });
     ok.hidden = again.hidden = device.hidden = true; shoot.disabled = true;
     const s = openSheet({
       title, size: 'tall',
@@ -147,7 +180,7 @@ export function capturePhoto({ title = 'Tirar foto' } = {}) {
       video.hidden = false; shoot.hidden = false; shoot.disabled = true; status.textContent = '';
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { fail('Câmera interna indisponível neste navegador.'); return; }
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 960 } }, audio: false });
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing, width: { ideal: 1280 }, height: { ideal: 960 } }, audio: false });
         if (s.closing) { stop(); return; }
         video.srcObject = stream; await video.play();
         shoot.disabled = false; stage.classList.add('is-live');

@@ -9,6 +9,7 @@ import { errorState, skelCards, btn, textField, formError, badge, avatar } from 
 import { pullToRefresh } from './ui/gestures.js';
 import { bellMount, refreshNotif } from './ui/notificacoes.js';
 import { applyTema } from './tema.js';
+import { meuAvatar } from './ui/avatar.js';
 
 const NAV = [
   { id: 'inicio', label: 'Início', icon: 'home', key: '1' },
@@ -77,7 +78,7 @@ function renderNav() {
   qs('#side-space').replaceChildren(spaceButton(false));
   qs('#top-space').replaceChildren(bellMount('top'), spaceButton(true));
   const u = store.boot.usuario;
-  qs('#side-foot').replaceChildren(bellMount('side'), h('a', { class: 'side-user', href: '#/ajustes' }, avatar(u.nome || u.email), h('span', { class: 'side-user-txt' }, h('span', { class: 'side-user-name' }, u.nome || 'Perfil'), h('span', { class: 'side-user-mail' }, u.email))), DEMO ? h('button', { class: 'chip chip--demo', type: 'button', onclick: openDemo }, icon('settings'), h('span', {}, 'Demonstração')) : null);
+  qs('#side-foot').replaceChildren(bellMount('side'), h('a', { class: 'side-user', href: '#/ajustes/perfil' }, meuAvatar(u.nome || u.email), h('span', { class: 'side-user-txt' }, h('span', { class: 'side-user-name' }, u.nome || 'Perfil'), h('span', { class: 'side-user-mail' }, u.email))), DEMO ? h('button', { class: 'chip chip--demo', type: 'button', onclick: openDemo }, icon('settings'), h('span', {}, 'Demonstração')) : null);
 }
 function markNav(name) {
   const more = NAV.find((n) => n.id === name && n.more);

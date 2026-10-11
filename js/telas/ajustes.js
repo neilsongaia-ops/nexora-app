@@ -1,4 +1,4 @@
-// Ajustes: perfil, aparência, notificações, espaço e pessoas, categorias, histórico de configuração, preços, deslocamento (tela própria), reputação, exportar, sair
+// Ajustes: perfil (tela própria), aparência, notificações, espaço e pessoas, categorias, histórico de configuração, preços, deslocamento (tela própria), reputação, exportar, sair
 import { h, money, uuid, emit, ls, dmy } from '../util.js';
 import { icon } from '../icons.js';
 import { DEMO, call, load, clearSession, invalidate, session } from '../api.js';
@@ -10,11 +10,13 @@ import { abrirConvitesEnviados } from './convites.js';
 import { openHistorico } from '../ui/historico.js';
 import { segmented, card, row, badge, empty, errorState, skelRows, sectionHead, btn, textField, toggle, formError, avatar, kv, tip } from '../ui/components.js';
 import { applyTema, getTema } from '../tema.js';
+import { meuAvatar, setFoto } from '../ui/avatar.js';
 
 const PAPEL = { leitura: 'Leitura', editor: 'Editor', admin: 'Admin' };
 
 export default async function ajustes(ctx) {
   if (ctx.params[0] === 'deslocamento') return (await import('./deslocamento.js')).default(ctx);
+  if (ctx.params[0] === 'perfil') return (await import('./perfil.js')).default(ctx);
   const { view, setTitle } = ctx;
   setTitle('Ajustes');
   const b = store.boot, u = b.usuario, admin = can('admin');
@@ -24,7 +26,7 @@ export default async function ajustes(ctx) {
   const cfgEl = h('div', { class: 'set-group' }, shareEl, nav('route', 'Deslocamento', deslSub, () => ctx.go('/ajustes/deslocamento')));
   view.append(h('div', { class: 'cols' },
     h('div', { class: 'sec' },
-      h('div', { class: 'set-group' }, row({ lead: avatar(u.nome || u.email), title: u.nome || 'Seu nome', sub: u.email, trail: icon('edit', 'muted'), onClick: perfil })),
+      h('div', { class: 'set-group' }, row({ lead: meuAvatar(u.nome || u.email), title: u.nome || 'Seu nome', sub: u.email, trail: icon('chevR', 'muted'), aria: 'Meu perfil', onClick: () => ctx.go('/ajustes/perfil') })),
       sectionHead('Aparência'),
       h('div', { class: 'set-group' }, h('div', { class: 'set-row' }, segmented([{ value: 'claro', label: 'Claro', icon: 'sun' }, { value: 'escuro', label: 'Escuro', icon: 'moon' }, { value: 'auto', label: 'Automático', icon: 'auto' }], { value: getTema(), aria: 'Tema', cls: 'theme-pick', onChange: (v) => applyTema(v) }))),
       sectionHead('Notificações'), prefsLista(),
@@ -63,14 +65,6 @@ export default async function ajustes(ctx) {
     load('reputacao.minha').then((r) => el.replaceChildren(h('div', { class: 'set-row' }, h('div', { class: 'rep' }, h('span', { class: 'rep-v num' }, String(r.pontos)), h('div', { class: 'set-row-k' }, h('span', { class: 'toggle-label' }, 'pontos'), h('span', { class: 'set-row-sub' }, `${r.observacoes} preços · ${r.validadas} verificados`))),
       badge({ novo: 'Novo', confiavel: 'Confiável', bloqueado: 'Bloqueado' }[r.nivel] || r.nivel, r.nivel === 'bloqueado' ? 'out' : r.nivel === 'confiavel' ? 'in' : 'neutral', r.nivel === 'confiavel' ? 'verified' : null)))).catch((e) => el.replaceChildren(errorState(e.message)));
     return el;
-  }
-  function perfil() {
-    let nome = u.nome || '';
-    const err = formError();
-    const f = textField('Seu nome', { value: nome, autofocus: true, autocomplete: 'name', onInput: (v) => { nome = v; } });
-    const bt = btn('Salvar', { size: 'lg', full: true });
-    bt.onclick = async () => { if (!nome.trim()) { f.setError('Informe seu nome'); return; } bt.disabled = true; try { await call('perfil.salvar', { nome: nome.trim() }, { rid: uuid() }); await s.close(); toast('Perfil salvo.', { tone: 'success' }); await loadBoot(); ctx.refresh(); } catch (e) { err.show(e.message); } finally { bt.disabled = false; } };
-    const s = openSheet({ title: 'Perfil', content: [err, f], footer: bt });
   }
   function renomearEspaco() {
     let nome = b.espaco.nome;
@@ -222,6 +216,8 @@ export async function openDemoPanel() {
       btn('Banco ainda não criado', { kind: 'secondary', icon: 'refresh', onClick: () => { demo.setFlag('semBanco', true); location.reload(); } }),
       btn('Deslocamento sem nada cadastrado', { kind: 'secondary', icon: 'route', onClick: async () => { demo.setDesloc('vazio'); invalidate(); await s.close(); emit('dados'); } }),
       btn('Deslocamento vindo do “local de casa”', { kind: 'secondary', icon: 'home', onClick: async () => { demo.setDesloc('migrar'); invalidate(); await s.close(); emit('dados'); } }),
+      btn('Perfil sem CPF, telefone e foto', { kind: 'secondary', icon: 'users', onClick: async () => { demo.setPerfil('vazio'); setFoto(null); await s.close(); emit('dados'); } }),
+      btn('Perfil de exemplo (com CPF)', { kind: 'secondary', icon: 'users', onClick: async () => { demo.setPerfil('exemplo'); setFoto(null); await s.close(); emit('dados'); } }),
       btn('Recomeçar demonstração', { kind: 'danger', icon: 'refresh', onClick: () => { demo.resetDemo(); ls.del('nx.ws'); location.reload(); } })),
   ] });
 }
