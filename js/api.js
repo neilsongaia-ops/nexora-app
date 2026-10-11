@@ -20,7 +20,7 @@ export const READS = new Set(['bootstrap', 'ws.listar', 'membros.listar', 'recur
   'alertas.precos', 'reputacao.minha', 'config.ler', 'listas.listar', 'listas.detalhe', 'sessoes.listar', 'sessoes.detalhe',
   'comparacao.lista', 'nfce.interpretar', 'admin.painel', 'admin.catalogo', 'admin.denuncias', 'exportar.espaco', 'ws.resumo', 'ws.arquivados',
   'notificacoes.listar', 'notificacoes.contar', 'notificacoes.preferencias', 'convites.recebidos', 'convites.enviados',
-  'historico.listar', 'historico.serie']);
+  'historico.listar', 'historico.serie', 'deslocamento.ler']);
 const NO_OFFLINE = new Set(['ws.resumo', 'ws.arquivados', 'produtos.imagens', 'exportar.espaco', 'nfce.interpretar', 'integridade.verificar',
   'notificacoes.listar', 'notificacoes.contar', 'notificacoes.preferencias_salvar', 'convites.recebidos', 'convites.enviados']);
 // confirmar preço e denunciar exigem só "leitura", mas são escritas (não usar cache)

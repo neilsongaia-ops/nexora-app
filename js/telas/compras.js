@@ -7,6 +7,7 @@ import { openSheet, openMenu, pick, confirmSheet } from '../ui/sheet.js';
 import { toast } from '../ui/toast.js';
 import { infinite } from '../ui/gestures.js';
 import { scanCode, geolocate } from '../ui/media.js';
+import { escolherNoMapa, coordTxt } from '../ui/mapa.js';
 import { segmented, card, row, badge, empty, errorState, skelRows, skelCards, btn, iconBtn, searchBox, thumb, textField, pickField, formError, chip, sectionHead } from '../ui/components.js';
 import { categoriaItems } from './lancForm.js';
 
@@ -126,16 +127,18 @@ export function produtoForm({ edit, initial = {}, fromCatalog, onSaved } = {}) {
 
 async function lojas(ctx, body) {
   if (can('editor')) ctx.setFab({ label: 'Nova loja', icon: 'plus', onClick: () => lojaForm() });
-  let modo = 'todas', pos = null;
+  let modo = 'todas', pos = null, casa = null;
   const tools = h('div', { class: 'chip-row' });
   const list = h('div', { class: 'list' }, skelRows(4));
   body.append(tools, list);
-  const drawTools = () => tools.replaceChildren(chip('Todas', { selected: modo === 'todas', onClick: () => { modo = 'todas'; draw(); } }), chip('Perto de mim', { selected: modo === 'perto', ic: 'pin', onClick: async () => { try { pos ||= await geolocate(); modo = 'perto'; draw(); } catch (e) { toast(e.message, { tone: 'danger' }); } } }));
+  load('deslocamento.ler', {}).then((d) => { casa = (d.enderecos || []).find((e) => e.padrao && e.status !== 'INATIVO') || null; if (casa) drawTools(); }).catch(() => {});
+  const drawTools = () => tools.replaceChildren(chip('Todas', { selected: modo === 'todas', onClick: () => { modo = 'todas'; draw(); } }), casa ? chip('Perto de ' + casa.nome, { selected: modo === 'casa', ic: 'home', onClick: () => { modo = 'casa'; draw(); } }) : '', chip('Perto de mim', { selected: modo === 'perto', ic: 'pin', onClick: async () => { try { pos ||= await geolocate(); modo = 'perto'; draw(); } catch (e) { toast(e.message, { tone: 'danger' }); } } }));
   const draw = async () => {
     drawTools(); list.replaceChildren(skelRows(4));
     try {
-      const ls = modo === 'perto' ? await call('lojas.proximas', { latitude: pos.latitude, longitude: pos.longitude, raio_km: 15 }) : await load('lojas.listar', {});
-      if (!ls.length) { list.replaceChildren(empty({ ic: 'store', title: modo === 'perto' ? 'Nenhuma loja por perto' : 'Nenhuma loja cadastrada' })); return; }
+      const ref = modo === 'casa' && casa ? casa : modo === 'perto' ? pos : null;
+      const ls = ref ? await call('lojas.proximas', { latitude: ref.latitude, longitude: ref.longitude, raio_km: 15 }) : await load('lojas.listar', {});
+      if (!ls.length) { list.replaceChildren(empty({ ic: 'store', title: ref ? 'Nenhuma loja por perto' : 'Nenhuma loja cadastrada' })); return; }
       list.replaceChildren(...ls.map((l) => row({
         lead: h('span', { class: 'tipo-ico' }, icon('store')), title: l.nome,
         sub: [l.cidade && l.uf ? `${l.cidade}/${l.uf}` : l.cidade, l.cnpj ? 'CNPJ ' + l.cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5') : null].filter(Boolean).join(' · '),
@@ -157,7 +160,7 @@ export function lojaForm(edit, after) {
   const err = formError(), rid = uuid();
   const fn = textField('Nome', { value: st.nome, autofocus: true, onInput: (v) => { st.nome = v; fn.setError(''); } });
   const geoTxt = h('span', { class: 'set-row-sub num' });
-  const drawGeo = () => { geoTxt.textContent = st.latitude != null ? `${st.latitude.toFixed(4)}, ${st.longitude.toFixed(4)}` : 'Sem localização'; };
+  const drawGeo = () => { geoTxt.textContent = st.latitude != null ? coordTxt(st.latitude, st.longitude) : 'Sem localização'; };
   drawGeo();
   const b = btn(edit ? 'Salvar' : 'Cadastrar loja', { size: 'lg', full: true });
   b.onclick = async () => {
@@ -170,7 +173,9 @@ export function lojaForm(edit, after) {
     textField('CNPJ', { value: st.cnpj || '', inputmode: 'numeric', placeholder: 'Opcional', onInput: (v) => { st.cnpj = v.replace(/\D/g, ''); } }),
     h('div', { class: 'grid-2' }, textField('Cidade', { value: st.cidade || '', onInput: (v) => { st.cidade = v; } }), textField('UF', { value: st.uf || '', maxlength: 2, onInput: (v) => { st.uf = v.toUpperCase(); } })),
     h('div', { class: 'set-row' }, h('div', { class: 'set-row-k' }, h('span', { class: 'field-label' }, 'Localização'), geoTxt),
-      btn('Usar onde estou', { kind: 'secondary', icon: 'pin', size: 'sm', onClick: async (e) => { const bb = e.currentTarget; bb.disabled = true; try { Object.assign(st, await geolocate()); drawGeo(); } catch (x) { toast(x.message, { tone: 'danger' }); } finally { bb.disabled = false; } } }))] });
+      h('div', { class: 'btn-inline' },
+        btn('Onde estou', { kind: 'secondary', icon: 'locate', size: 'sm', onClick: async (e) => { const bb = e.currentTarget; bb.disabled = true; try { Object.assign(st, await geolocate()); drawGeo(); } catch (x) { toast(x.message, { tone: 'danger' }); } finally { bb.disabled = false; } } }),
+        btn('No mapa', { kind: 'secondary', icon: 'map', size: 'sm', onClick: async () => { const r = await escolherNoMapa({ latitude: st.latitude, longitude: st.longitude, busca: [st.nome, st.cidade].filter(Boolean).join(', ') }); if (r) { st.latitude = r.latitude; st.longitude = r.longitude; drawGeo(); } } })))] });
 }
 
 export function denunciar(alvo_tipo, alvo_id) {

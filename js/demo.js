@@ -2,13 +2,22 @@
 import { isoLocal, addDays, addMonths, diffDays, r2, sleep, monthStart, monthEnd } from './util.js';
 
 const T = isoLocal(new Date());
-const KEY = 'nx.demo.v10', FK = 'nx.demo.flags';
+const KEY = 'nx.demo.v11', FK = 'nx.demo.flags';
 const sget = (k) => { try { return JSON.parse(sessionStorage.getItem(k)); } catch { return null; } };
 const sset = (k, v) => { try { sessionStorage.setItem(k, JSON.stringify(v)); } catch { /* cheio */ } };
 const flags = Object.assign({ lento: false, falhar: false, conflito: false, expirar: false, offline: false, semBanco: false, vazio: false, contaNova: false }, sget(FK) || {});
 if (new URLSearchParams(location.search).get('lento') === '1') flags.lento = true;
 export const getFlags = () => ({ ...flags });
 export function setFlag(k, v) { flags[k] = v; sset(FK, flags); }
+export function setDesloc(kind) {
+  if (!DB) seed();
+  DB.desl ||= {};
+  const k = DB.usuario.id;
+  if (kind === 'vazio') { DB.desl[k] = { enderecos: [], veiculos: [], combustiveis: {}, modos: [], migrado: true }; DB.spaces.forEach((s) => { s.config.casa_latitude = null; s.config.casa_longitude = null; }); }
+  else if (kind === 'migrar') { delete DB.desl[k]; DB.spaces.forEach((s) => { s.config.casa_latitude = -1.4552; s.config.casa_longitude = -48.4883; s.config.custo_km = s.config.custo_km || 0.95; }); }
+  else DB.desl[k] = seedDesl();
+  save();
+}
 export function resetDemo() { sessionStorage.removeItem(KEY); DB = null; flags.contaNova = false; sset(FK, flags); }
 
 let DB = sget(KEY);
@@ -501,6 +510,7 @@ function seed() {
     imagens: [{ gtin: gtin('789100010016'), produto: 'Detergente neutro', ativa: true }],
   };
   seedConvites();
+  DB.desl = { [DB.usuario.id]: seedDesl() };
   save();
 }
 
@@ -609,11 +619,79 @@ function listaView(S, li) {
   const its = S.listaItens.filter((i) => i.lista_id === li.id);
   return { ...li, itens: its.length, comprados: its.filter((i) => i.comprado).length };
 }
+// ---------- deslocamento (pessoal: cada pessoa vê só o seu) ----------
+const COMBS = [['GASOLINA', 'Gasolina', 'litro'], ['ETANOL', 'Etanol', 'litro'], ['DIESEL', 'Diesel', 'litro'], ['GNV', 'GNV', 'm³'], ['ELETRICO', 'Energia elétrica', 'kWh']];
+const TIPOS_MODO = ['A_PE', 'ONIBUS', 'VEICULO', 'APP', 'OUTRO'], TIPOS_VEIC = ['CARRO', 'MOTO', 'OUTRO'];
+const ativoD = (x) => x.status !== 'INATIVO';
+const numOr = (v, d) => (v == null || v === '' ? d : Number(v));
+function seedDesl() {
+  return {
+    migrado: true, combustiveis: { GASOLINA: 6.29 },
+    enderecos: [
+      { id: 'en_casa', nome: 'Casa', endereco: 'Rua dos Mundurucus, 1200 · Batista Campos', latitude: -1.4552, longitude: -48.4883, padrao: true, status: 'ATIVO' },
+      { id: 'en_trab', nome: 'Trabalho', endereco: 'Av. Almirante Barroso, 900 · Marco', latitude: -1.4290, longitude: -48.4590, padrao: false, status: 'ATIVO' },
+    ],
+    veiculos: [
+      { id: 've_carro', nome: 'Carro da família', tipo: 'CARRO', combustivel: 'GASOLINA', consumo: 11.5, status: 'ATIVO' },
+      { id: 've_moto', nome: 'Moto do Rafael', tipo: 'MOTO', combustivel: 'ETANOL', consumo: 32, status: 'ATIVO' },
+    ],
+    modos: [
+      { id: 'mo_carro', nome: 'Carro da família', tipo: 'VEICULO', veiculo_id: 've_carro', tarifa: 0, custo_km: 0, padrao: true, status: 'ATIVO' },
+      { id: 'mo_pe', nome: 'A pé', tipo: 'A_PE', veiculo_id: null, tarifa: 0, custo_km: 0, padrao: false, status: 'ATIVO' },
+      { id: 'mo_bus', nome: 'Ônibus', tipo: 'ONIBUS', veiculo_id: null, tarifa: 5, custo_km: 0, padrao: false, status: 'ATIVO' },
+      { id: 'mo_app', nome: 'App de transporte', tipo: 'APP', veiculo_id: null, tarifa: 4.5, custo_km: 2.1, padrao: false, status: 'ATIVO' },
+      { id: 'mo_moto', nome: 'Moto do Rafael', tipo: 'VEICULO', veiculo_id: 've_moto', tarifa: 0, custo_km: 0, padrao: false, status: 'ATIVO' },
+    ],
+  };
+}
+function deslOf(S) {
+  DB.desl ||= {};
+  const k = DB.usuario.id;
+  const d = DB.desl[k] ||= { enderecos: [], veiculos: [], combustiveis: {}, modos: [], migrado: false };
+  if (!d.migrado) {
+    d.migrado = true;
+    const c = (S && S.config) || {};
+    if (c.casa_latitude != null && !d.enderecos.length) d.enderecos.push({ id: nid('en'), nome: 'Casa', endereco: null, latitude: c.casa_latitude, longitude: c.casa_longitude, padrao: true, status: 'ATIVO' });
+    if (c.custo_km > 0 && !d.modos.length) d.modos.push({ id: nid('mo'), nome: 'Carro (custo por km)', tipo: 'OUTRO', veiculo_id: null, tarifa: 0, custo_km: c.custo_km, padrao: true, status: 'ATIVO' });
+    save();
+  }
+  return d;
+}
+function viewModo(d, m) {
+  let tarifa = r2(m.tarifa || 0), custo_km = Number(m.custo_km || 0), incompleto = false;
+  if (m.tipo === 'A_PE') { tarifa = 0; custo_km = 0; }
+  else if (m.tipo === 'ONIBUS') custo_km = 0;
+  else if (m.tipo === 'VEICULO') {
+    tarifa = 0;
+    const v = d.veiculos.find((x) => x.id === m.veiculo_id), preco = v ? d.combustiveis[v.combustivel] : null;
+    if (v && v.consumo > 0 && preco > 0) custo_km = Math.round(preco / v.consumo * 10000) / 10000; else { custo_km = 0; incompleto = true; }
+  }
+  return { id: m.id, nome: m.nome, tipo: m.tipo, veiculo_id: m.veiculo_id || null, tarifa, custo_km, incompleto, padrao: !!m.padrao, status: m.status };
+}
+const combView = (d) => COMBS.map(([combustivel, nome, unidade]) => ({ combustivel, nome, unidade, preco: d.combustiveis[combustivel] ?? null }));
+function fixPadrao(list, escolhido) {
+  if (escolhido) list.forEach((x) => { x.padrao = x === escolhido; });
+  list.forEach((x) => { if (!ativoD(x)) x.padrao = false; });
+  if (!list.some((x) => x.padrao && ativoD(x))) { const f = list.find(ativoD); if (f) f.padrao = true; }
+}
 function comparar(S, p) {
   const li = S.listas.find((l) => l.id === p.lista_id) || fail('Lista não encontrada.');
   const its = S.listaItens.filter((i) => i.lista_id === li.id && !i.comprado);
   if (!its.length) fail('A lista não tem itens pendentes.');
-  const cfg = S.config, lat = p.latitude ?? cfg.casa_latitude, lng = p.longitude ?? cfg.casa_longitude;
+  const cfg = S.config, dsl = deslOf(S), fator = cfg.fator_rota || 1.3;
+  let origem = null;
+  if (p.latitude != null && p.longitude != null) origem = { latitude: Number(p.latitude), longitude: Number(p.longitude), fonte: 'INFORMADA', nome: 'onde você está', endereco_id: null };
+  else {
+    const ends = dsl.enderecos.filter(ativoD);
+    const e = p.endereco_id ? ends.find((x) => x.id === p.endereco_id) || fail('Endereço não encontrado.') : ends.find((x) => x.padrao) || ends[0];
+    if (e) origem = { latitude: e.latitude, longitude: e.longitude, fonte: 'ENDERECO', nome: e.nome, endereco_id: e.id };
+    else if (cfg.casa_latitude != null) origem = { latitude: cfg.casa_latitude, longitude: cfg.casa_longitude, fonte: 'CASA', nome: 'Casa', endereco_id: null };
+  }
+  const ms = dsl.modos.filter(ativoD);
+  const m0 = p.modo_id ? ms.find((x) => x.id === p.modo_id) || fail('Transporte não encontrado.') : ms.find((x) => x.padrao) || ms[0];
+  const mv = m0 ? viewModo(dsl, m0) : null;
+  const modo = mv ? { id: mv.id, nome: mv.nome, tipo: mv.tipo, tarifa: mv.tarifa, custo_km: mv.custo_km, incompleto: mv.incompleto } : null;
+  const lat = origem ? origem.latitude : null, lng = origem ? origem.longitude : null;
   let lojas = S.lojas.filter((l) => l.status !== 'INATIVA');
   if (p.incluir_compartilhadas !== false) lojas = lojas.concat(DB.lojasGlobais);
   if (p.loja_ids && p.loja_ids.length) lojas = lojas.filter((l) => p.loja_ids.includes(l.id));
@@ -626,14 +704,14 @@ function comparar(S, p) {
       else { const b = best(it); falt.push(it.descricao); if (b) est += b.preco * it.quantidade; itens.push({ item_id: it.id, descricao: it.descricao, quantidade: it.quantidade, preco: b ? b.preco : null, subtotal: b ? r2(b.preco * it.quantidade) : null, fonte: b ? 'ESTIMADO' : null }); }
     });
     const temGeo = l.latitude != null && lat != null;
-    const dist = temGeo ? r2(hav(lat, lng, l.latitude, l.longitude)) : null, desl = temGeo ? r2(dist * (cfg.fator_rota || 1.3) * 2) : null, custo = temGeo ? r2(desl * (cfg.custo_km || 0)) : 0;
+    const dist = temGeo ? r2(hav(lat, lng, l.latitude, l.longitude)) : null, km1 = temGeo ? dist * fator : null, desl = temGeo ? r2(km1 * 2) : null, custo = temGeo && mv && !mv.incompleto ? r2(2 * (mv.tarifa + mv.custo_km * km1)) : 0;
     return { loja_id: l.id, nome: l.nome, compartilhada: !!l.global, total_conhecido: r2(conh), total_estimado: r2(conh + est), cobertura: r2(n / its.length), itens_faltantes: falt, distancia_km: dist, deslocamento_km: desl, custo_deslocamento: custo, total_final: r2(conh + est + custo), itens };
   }).filter((l) => l.cobertura > 0 && (!p.raio_km || l.distancia_km == null || l.distancia_km <= p.raio_km)).sort((a, b) => (a.cobertura < 0.5) - (b.cobertura < 0.5) || a.total_final - b.total_final);
-  if (!out.length) return { lojas: [], melhor: null, economia_vs_pior: 0, compra_dividida: null };
+  if (!out.length) return { origem, modo, lojas: [], melhor: null, economia_vs_pior: 0, compra_dividida: null };
   const grupos = {};
   its.forEach((it) => { const b = best(it); if (!b) return; const lo = out.find((x) => x.loja_id === b.loja_id); if (!lo) return; (grupos[b.loja_id] ||= { loja_id: b.loja_id, nome: lo.nome, itens: [], subtotal: 0, custo_deslocamento: lo.custo_deslocamento }); grupos[b.loja_id].itens.push({ item_id: it.id, descricao: it.descricao, quantidade: it.quantidade, preco: b.preco, subtotal: r2(b.preco * it.quantidade) }); grupos[b.loja_id].subtotal = r2(grupos[b.loja_id].subtotal + b.preco * it.quantidade); });
   const gs = Object.values(grupos), tot = r2(gs.reduce((s, g) => s + g.subtotal, 0)), cd = r2(gs.reduce((s, g) => s + g.custo_deslocamento, 0));
-  return { origem: { latitude: lat, longitude: lng }, lojas: out, melhor: out[0].loja_id, economia_vs_pior: r2(Math.max(0, Math.max(...out.filter((l) => l.cobertura >= 0.5).map((l) => l.total_final), out[0].total_final) - out[0].total_final)),
+  return { origem, modo, lojas: out, melhor: out[0].loja_id, economia_vs_pior: r2(Math.max(0, Math.max(...out.filter((l) => l.cobertura >= 0.5).map((l) => l.total_final), out[0].total_final) - out[0].total_final)),
     compra_dividida: gs.length > 1 ? { lojas: gs, total: tot, custo_deslocamento: cd, total_final: r2(tot + cd), economia_vs_melhor: r2(out[0].total_final - tot - cd) } : null };
 }
 function sessaoView(S, s) { const l = lojaOf(S, s.loja_id); return { ...clone(s), loja: l ? { id: l.id, nome: l.nome } : null, lista_nome: (S.listas.find((x) => x.id === s.lista_id) || {}).nome || '' }; }
@@ -703,7 +781,7 @@ export function amostraNota() {
 
 // ---------- rotas ----------
 const ADMIN_WS = new Set(['ws.renomear', 'ws.resumo', 'ws.arquivar', 'membros.listar', 'membros.convidar', 'membros.remover', 'convites.enviados', 'convites.cancelar', 'exportar.espaco', 'config.salvar', 'integridade.verificar']);
-const LEITURA_WRITES = new Set(['notificacoes.preferencias_salvar', 'precos.confirmar', 'denuncias.criar', 'perfil.salvar', 'ws.criar', 'ws.listar', 'ws.arquivados', 'ws.desarquivar']);
+const LEITURA_WRITES = new Set(['enderecos.salvar', 'veiculos.salvar', 'combustiveis.salvar', 'modos.salvar', 'notificacoes.preferencias_salvar', 'precos.confirmar', 'denuncias.criar', 'perfil.salvar', 'ws.criar', 'ws.listar', 'ws.arquivados', 'ws.desarquivar']);
 const RANK = { leitura: 1, editor: 2, admin: 3 };
 const R = {
   'auth.pedir': ({ email }) => { if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email || '')) fail('Confira o e-mail.'); return { enviado: true, validade_min: 10 }; },
@@ -1067,6 +1145,70 @@ const R = {
   'reputacao.minha': (p, { S }) => ({ ...DB.reputacao, compartilhando: !!S.config.compartilhar_precos }),
   'config.ler': (p, { S }) => S.config,
   'config.salvar': (p, { S }) => { ['compartilhar_precos', 'custo_km', 'fator_rota', 'casa_latitude', 'casa_longitude'].forEach((k) => { if (p[k] !== undefined) S.config[k] = p[k]; }); return S.config; },
+  'deslocamento.ler': ({ todos }, { S }) => {
+    const d = deslOf(S), f = (x) => todos || ativoD(x);
+    return { enderecos: d.enderecos.filter(f), veiculos: d.veiculos.filter(f), combustiveis: combView(d), modos: d.modos.filter(f).map((m) => viewModo(d, m)),
+      tipos_modo: TIPOS_MODO, tipos_veiculo: TIPOS_VEIC, fator_rota: S.config.fator_rota || 1.3 };
+  },
+  'enderecos.salvar': (p, { S }) => {
+    const d = deslOf(S);
+    let e = p.id ? d.enderecos.find((x) => x.id === p.id) || fail('Endereço não encontrado.') : null;
+    const nome = String(p.nome ?? (e ? e.nome : '')).trim();
+    if (!nome) fail('Dê um nome ao endereço.');
+    const lat = numOr(p.latitude, e ? e.latitude : null), lng = numOr(p.longitude, e ? e.longitude : null);
+    if (lat == null || lng == null || !Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) fail('Marque o local do endereço: use onde você está, o mapa ou a busca.');
+    if (!e) { e = { id: nid('en'), status: 'ATIVO', padrao: false }; d.enderecos.push(e); }
+    Object.assign(e, { nome, latitude: lat, longitude: lng, endereco: p.endereco !== undefined ? String(p.endereco || '').trim() || null : e.endereco ?? null });
+    if (p.status === 'INATIVO' || p.status === 'ATIVO') e.status = p.status;
+    fixPadrao(d.enderecos, p.padrao && ativoD(e) ? e : null);
+    return e;
+  },
+  'veiculos.salvar': (p, { S }) => {
+    const d = deslOf(S);
+    let v = p.id ? d.veiculos.find((x) => x.id === p.id) || fail('Veículo não encontrado.') : null;
+    const nome = String(p.nome ?? (v ? v.nome : '')).trim(), tipo = p.tipo || (v && v.tipo), comb = p.combustivel || (v && v.combustivel);
+    if (!nome) fail('Dê um nome ao veículo.');
+    if (!TIPOS_VEIC.includes(tipo)) fail('Escolha se é carro, moto ou outro.');
+    if (!COMBS.some(([c]) => c === comb)) fail('Escolha o combustível.');
+    const consumo = numOr(p.consumo, v ? v.consumo : null);
+    if (consumo != null && !(consumo > 0)) fail('Informe um consumo maior que zero.');
+    const novo = !v, nomeAntes = v && v.nome;
+    if (!v) { v = { id: nid('ve'), status: 'ATIVO' }; d.veiculos.push(v); }
+    Object.assign(v, { nome, tipo, combustivel: comb, consumo: consumo ?? null });
+    if (p.status === 'INATIVO' || p.status === 'ATIVO') v.status = p.status;
+    const md = d.modos.filter((m) => m.tipo === 'VEICULO' && m.veiculo_id === v.id);
+    if (novo && p.criar_modo !== false) d.modos.push({ id: nid('mo'), nome, tipo: 'VEICULO', veiculo_id: v.id, tarifa: 0, custo_km: 0, padrao: false, status: 'ATIVO' });
+    md.forEach((m) => { if (m.nome === nomeAntes) m.nome = nome; if (p.status === 'INATIVO' || p.status === 'ATIVO') m.status = p.status; });
+    fixPadrao(d.modos, null);
+    return v;
+  },
+  'combustiveis.salvar': ({ combustivel, preco }, { S }) => {
+    const d = deslOf(S);
+    if (!COMBS.some(([c]) => c === combustivel)) fail('Combustível desconhecido.');
+    if (preco == null || preco === '') delete d.combustiveis[combustivel];
+    else { const n = Number(preco); if (!(n > 0)) fail('Informe um preço maior que zero.'); d.combustiveis[combustivel] = r2(n); }
+    return combView(d);
+  },
+  'modos.salvar': (p, { S }) => {
+    const d = deslOf(S);
+    let m = p.id ? d.modos.find((x) => x.id === p.id) || fail('Transporte não encontrado.') : null;
+    const tipo = p.tipo || (m && m.tipo);
+    if (!TIPOS_MODO.includes(tipo)) fail('Escolha o tipo de transporte.');
+    const nome = String(p.nome ?? (m ? m.nome : '')).trim();
+    if (!nome) fail('Dê um nome ao transporte.');
+    const inativando = p.status === 'INATIVO';
+    let veiculo_id = null, tarifa = 0, custo_km = 0;
+    if (tipo === 'VEICULO') { veiculo_id = p.veiculo_id || (m && m.veiculo_id); if (!inativando && !d.veiculos.some((v) => v.id === veiculo_id && ativoD(v))) fail('Escolha o veículo.'); }
+    if (['ONIBUS', 'APP', 'OUTRO'].includes(tipo)) { tarifa = r2(numOr(p.tarifa, m ? m.tarifa : 0)); if (tarifa < 0) fail('A tarifa não pode ser negativa.'); }
+    if (['APP', 'OUTRO'].includes(tipo)) { custo_km = Number(numOr(p.custo_km, m ? m.custo_km : 0)); if (custo_km < 0) fail('O valor por km não pode ser negativo.'); }
+    if (!inativando && tipo === 'ONIBUS' && !(tarifa > 0)) fail('Informe a tarifa do ônibus.');
+    if (!inativando && ['APP', 'OUTRO'].includes(tipo) && !(tarifa > 0) && !(custo_km > 0)) fail('Informe a tarifa ou o valor por km.');
+    if (!m) { m = { id: nid('mo'), status: 'ATIVO', padrao: false }; d.modos.push(m); }
+    Object.assign(m, { nome, tipo, veiculo_id, tarifa, custo_km });
+    if (p.status === 'INATIVO' || p.status === 'ATIVO') m.status = p.status;
+    fixPadrao(d.modos, p.padrao && ativoD(m) ? m : null);
+    return viewModo(d, m);
+  },
   'denuncias.criar': ({ alvo_tipo, alvo_id, motivo }) => {
     if (!['preco', 'produto', 'imagem', 'loja'].includes(alvo_tipo)) fail('Tipo de denúncia inválido.');
     if (!String(motivo || '').trim()) fail('Conte rapidamente o motivo.');

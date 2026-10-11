@@ -9,4 +9,10 @@ window.NEXORA_CONFIG = {
   zxing: 'https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js',   // leitor de código de barras para navegadores sem BarcodeDetector (iOS)
   pdfjs: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
   pdfjsWorker: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js',
+  leaflet: 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',            // mapa (OpenStreetMap), baixado só ao abrir o mapa
+  leafletSri: 'sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=',
+  leafletCss: 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
+  leafletCssSri: 'sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=',
+  mapaTiles: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+  nominatim: 'https://nominatim.openstreetmap.org/search?format=json&limit=5&countrycodes=br&accept-language=pt-BR&q=',
 };

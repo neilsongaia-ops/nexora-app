@@ -1,4 +1,4 @@
-// Ajustes: perfil, aparência, notificações, espaço e pessoas, categorias, histórico de configuração, preços e deslocamento, reputação, exportar, sair
+// Ajustes: perfil, aparência, notificações, espaço e pessoas, categorias, histórico de configuração, preços, deslocamento (tela própria), reputação, exportar, sair
 import { h, money, uuid, emit, ls, dmy } from '../util.js';
 import { icon } from '../icons.js';
 import { DEMO, call, load, clearSession, invalidate, session } from '../api.js';
@@ -8,18 +8,20 @@ import { toast } from '../ui/toast.js';
 import { refreshNotif, prefsLista } from '../ui/notificacoes.js';
 import { abrirConvitesEnviados } from './convites.js';
 import { openHistorico } from '../ui/historico.js';
-import { geolocate } from '../ui/media.js';
-import { segmented, card, row, badge, empty, errorState, skelRows, sectionHead, btn, textField, moneyField, toggle, formError, avatar, kv, tip } from '../ui/components.js';
+import { segmented, card, row, badge, empty, errorState, skelRows, sectionHead, btn, textField, toggle, formError, avatar, kv, tip } from '../ui/components.js';
 import { applyTema, getTema } from '../tema.js';
 
 const PAPEL = { leitura: 'Leitura', editor: 'Editor', admin: 'Admin' };
 
 export default async function ajustes(ctx) {
+  if (ctx.params[0] === 'deslocamento') return (await import('./deslocamento.js')).default(ctx);
   const { view, setTitle } = ctx;
   setTitle('Ajustes');
   const b = store.boot, u = b.usuario, admin = can('admin');
   const nav = (ic, label, sub, onClick, tone) => row({ lead: h('span', { class: 'tipo-ico' + (tone ? ' tone-' + tone : '') }, icon(ic)), title: label, sub, trail: icon('chevR', 'muted'), onClick });
-  const cfgEl = h('div', { class: 'set-group' }, skelRows(2));
+  const shareEl = h('div', {}, skelRows(1));
+  const deslSub = h('span', {}, '');
+  const cfgEl = h('div', { class: 'set-group' }, shareEl, nav('route', 'Deslocamento', deslSub, () => ctx.go('/ajustes/deslocamento')));
   view.append(h('div', { class: 'cols' },
     h('div', { class: 'sec' },
       h('div', { class: 'set-group' }, row({ lead: avatar(u.nome || u.email), title: u.nome || 'Seu nome', sub: u.email, trail: icon('edit', 'muted'), onClick: perfil })),
@@ -45,18 +47,16 @@ export default async function ajustes(ctx) {
         DEMO ? nav('settings', 'Modo demonstração', 'Simular estados', openDemoPanel, 'xfer') : null,
         nav('logout', 'Sair', null, sair, 'out')))));
 
+  load('deslocamento.ler', {}).then((d) => {
+    const e = d.enderecos.find((x) => x.padrao && x.status !== 'INATIVO'), m = d.modos.find((x) => x.padrao && x.status !== 'INATIVO');
+    deslSub.textContent = e || m ? [e && e.nome, m && m.nome].filter(Boolean).join(' · ') : 'Nada cadastrado';
+  }).catch(() => {});
   try {
     const c = await load('config.ler');
-    const dis = !admin;
-    const share = toggle('Compartilhar meus preços', { checked: c.compartilhar_precos, disabled: dis, sub: 'Sem identificar você. Ajuda toda a comunidade.', onChange: (v) => salvar({ compartilhar_precos: v }) });
-    const km = moneyField('Custo por km rodado', { value: c.custo_km, tipText: 'Usado para somar o custo de ida e volta na comparação de lojas.', onChange: debounceSave((v) => salvar({ custo_km: v })) });
-    if (dis) km.input.disabled = true;
-    const casa = h('div', { class: 'set-row' }, h('div', { class: 'set-row-k' }, h('span', { class: 'toggle-label' }, 'Local de casa'), h('span', { class: 'set-row-sub' }, c.casa_latitude != null ? 'Definido' : 'Não definido')),
-      btn('Usar onde estou', { kind: 'secondary', size: 'sm', icon: 'pin', disabled: dis, onClick: async (e) => { const bb = e.currentTarget; bb.disabled = true; try { const p = await geolocate(); await salvar({ casa_latitude: p.latitude, casa_longitude: p.longitude }); casa.querySelector('.set-row-sub').textContent = 'Definido'; } catch (x) { toast(x.message, { tone: 'danger' }); } finally { bb.disabled = false; } } }));
-    cfgEl.replaceChildren(share, h('div', { class: 'field' }, km), casa);
-  } catch (e) { cfgEl.replaceChildren(errorState(e.message, ctx.refresh)); }
+    const share = toggle('Compartilhar meus preços', { checked: c.compartilhar_precos, disabled: !admin, sub: 'Sem identificar você. Ajuda toda a comunidade.', onChange: (v) => salvar({ compartilhar_precos: v }) });
+    shareEl.replaceWith(share);
+  } catch (e) { shareEl.replaceChildren(errorState(e.message, ctx.refresh)); }
 
-  function debounceSave(fn) { let t; return (v) => { clearTimeout(t); t = setTimeout(() => fn(v), 700); }; }
   async function salvar(p) { try { await call('config.salvar', p, { rid: uuid() }); toast('Salvo.', { tone: 'success', duration: 1500 }); } catch (e) { toast(e.message, { tone: 'danger' }); } }
   function repEl() {
     const el = h('div', { class: 'set-group' }, skelRows(1));
@@ -220,6 +220,8 @@ export async function openDemoPanel() {
       btn('Primeiro acesso (espaço vazio)', { kind: 'secondary', icon: 'plus', onClick: async () => { await s.close(); const w = await call('ws.criar', { nome: 'Espaço novo' }, { rid: uuid() }); (await import('../app.js')).changeSpace(w.id); } }),
       btn('Conta nova com convite pendente', { kind: 'secondary', icon: 'mail', onClick: () => { demo.setFlag('contaNova', true); ls.del('nx.ws'); location.reload(); } }),
       btn('Banco ainda não criado', { kind: 'secondary', icon: 'refresh', onClick: () => { demo.setFlag('semBanco', true); location.reload(); } }),
+      btn('Deslocamento sem nada cadastrado', { kind: 'secondary', icon: 'route', onClick: async () => { demo.setDesloc('vazio'); invalidate(); await s.close(); emit('dados'); } }),
+      btn('Deslocamento vindo do “local de casa”', { kind: 'secondary', icon: 'home', onClick: async () => { demo.setDesloc('migrar'); invalidate(); await s.close(); emit('dados'); } }),
       btn('Recomeçar demonstração', { kind: 'danger', icon: 'refresh', onClick: () => { demo.resetDemo(); ls.del('nx.ws'); location.reload(); } })),
   ] });
 }
