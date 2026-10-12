@@ -2,7 +2,7 @@
 import { isoLocal, addDays, addMonths, diffDays, r2, sleep, monthStart, monthEnd } from './util.js';
 
 const T = isoLocal(new Date());
-const KEY = 'nx.demo.v11', FK = 'nx.demo.flags';
+const KEY = 'nx.demo.v12', FK = 'nx.demo.flags';
 const sget = (k) => { try { return JSON.parse(sessionStorage.getItem(k)); } catch { return null; } };
 const sset = (k, v) => { try { sessionStorage.setItem(k, JSON.stringify(v)); } catch { /* cheio */ } };
 const flags = Object.assign({ lento: false, falhar: false, conflito: false, expirar: false, offline: false, semBanco: false, vazio: false, contaNova: false }, sget(FK) || {});
@@ -348,7 +348,7 @@ const LOJAS = [
 const PRODUCE = ['Banana prata', 'Tomate', 'Ovos brancos', 'Queijo muçarela', 'Picanha bovina'];
 
 function seedCatalogo() {
-  DB.catalogo = [{ gtin: gtin('789100010030'), nome: 'Biscoito recheado de chocolate', marca: 'Doce Lar', ...tamUn('UN', '130 g') ? { unidade: tamUn('UN', '130 g').unidade, tam_embalagem: tamUn('UN', '130 g').tam } : {} }, { gtin: gtin('789100010031'), nome: 'Achocolatado em pó', marca: 'Vale Doce', unidade: tamUn('UN', '400 g').unidade, tam_embalagem: tamUn('UN', '400 g').tam }];
+  DB.catalogo = [{ gtin: gtin('789100010030'), nome: 'Biscoito recheado de chocolate', marca: 'Doce Lar', ...tamUn('UN', '130 g') ? { unidade: tamUn('UN', '130 g').unidade, tam_embalagem: tamUn('UN', '130 g').tam } : {} }, { gtin: gtin('789100010031'), nome: 'Achocolatado em pó', marca: 'Vale Doce', unidade: tamUn('UN', '400 g').unidade, tam_embalagem: tamUn('UN', '400 g').tam }, { gtin: gtin('789100010043'), nome: 'Cerveja puro malte 12 x 350 ml', marca: 'Rio Claro', unidade: 'UN', tam_embalagem: 1 }];
   DB.lojasGlobais = [{ id: 'l_gl1', nome: 'Supermercado Litorâneo', cnpj: '55666777000145', cidade: 'Belém', uf: 'PA', latitude: -1.4402, longitude: -48.4721, global: true }];
   DB.obs = []; DB.imagens = {};
   const r = rng(7);
@@ -383,6 +383,24 @@ function seedCompras(S, r) {
   lista('Churrasco de sábado', [['Picanha bovina', 1.5], ['Linguiça toscana', 1], ['Carvão vegetal', 1], ['Refrigerante de guaraná', 3], ['Gelo em cubos 5 kg', 2]]);
   lista('Farmácia', [['Protetor solar FPS 50', 1], ['Vitamina C efervescente', 2]]);
   lista('Volta às aulas (janeiro)', [['Cadernos 10 matérias', 3]], true);
+  // Fase 8: lata × pacote com 12, preços opcionais, item digitado parecido com produto e compra aberta
+  const addP = (o) => { S.produtos.push({ id: o.id, nome: o.nome, marca: o.marca || null, gtin: o.gtin || null, unidade: o.unidade || 'UN', tam_embalagem: o.tam || 1, categoria_id: 'c_merc', status: 'ATIVO', versao: 1, global_id: o.gtin ? 'g_' + o.id : null, contem_id: o.contem_id || null, contem_qtd: o.contem_qtd || null }); return o.id; };
+  const lata = addP({ id: 'p_lata', nome: 'Cerveja pilsen lata', marca: 'Rio Claro', gtin: gtin('789100010040'), unidade: 'ML', tam: 350 });
+  const pack = addP({ id: 'p_pack', nome: 'Cerveja pilsen — pacote com 12', marca: 'Rio Claro', gtin: gtin('789100010041'), contem_id: lata, contem_qtd: 12 });
+  const leite = addP({ id: 'p_lpo', nome: 'Leite em pó integral', marca: 'Vale Doce', gtin: gtin('789100010042'), unidade: 'G', tam: 400 });
+  [[lata, 3.69], [pack, 33.08], [leite, 6.99]].forEach(([pid, v]) => S.precos.push({ id: nid('pr'), produto_id: pid, loja_id: 'l_ap', preco: r2(v * 1.04), data: addDays(T, -33), origem: 'sessao' }, { id: nid('pr'), produto_id: pid, loja_id: 'l_ap', preco: v, data: addDays(T, -4), origem: 'nfce' }));
+  S.opcoes = [
+    { id: 'op_lpo1', produto_id: leite, rotulo: 'Atacado', preco: 6.15, loja_id: 'l_ap', qtd_min: 5, status: 'ATIVO' },
+    { id: 'op_lpo2', produto_id: leite, rotulo: 'Cartão da loja', preco: 6.59, loja_id: 'l_ap', qtd_min: null, status: 'ATIVO' },
+    { id: 'op_lat1', produto_id: lata, rotulo: 'Atacado', preco: 3.2, loja_id: 'l_ap', qtd_min: 24, status: 'ATIVO' },
+    { id: 'op_lat2', produto_id: lata, rotulo: 'App', preco: 3.5, loja_id: null, qtd_min: null, status: 'ATIVO' },
+  ];
+  const li = lista('Atacado do mês', [['Feijao', 2], ['Cerveja pilsen lata', 12], ['Leite em pó integral', 4], ['Café torrado e moído', 1], ['Açafrão', 1]]);
+  const se = { id: nid('se'), lista_id: li, loja_id: 'l_ap', recurso_id: null, status: 'ABERTA', criado_em: T + 'T10:05:00', itens: [] };
+  S.sessoes.push(se);
+  syncSess(S, se);
+  const cafe = se.itens.find((i) => i.descricao === 'Café torrado e moído');
+  if (cafe) cafe.marcado = true;
 }
 
 function seedCasa() {
@@ -627,11 +645,107 @@ function precoEm(S, pid, lid) {
   return null;
 }
 const ultimoPago = (S, pid) => S.precos.filter((x) => x.produto_id === pid).sort((a, b) => (a.data < b.data ? 1 : -1))[0] || null;
-const viewProd = (S, p) => { const { _base, ...v } = p; const u = ultimoPago(S, p.id); return { ...v, tem_imagem: !!DB.imagens[p.id] || !!(p.gtin && DB.imagens['g:' + p.gtin]), ultimo_preco: u ? u.preco : null, ultimo_preco_data: u ? u.data : null }; };
+const viewProd = (S, p) => { const { _base, ...v } = p; const u = ultimoPago(S, p.id), c = p.contem_id && prodOf(S, p.contem_id); return { ...v, contem_id: c ? c.id : null, contem_qtd: c ? p.contem_qtd : null, contem_nome: c ? c.nome : null, preco_unidade: c && u ? r2(u.preco / p.contem_qtd) : null, pacotes: S.produtos.filter((x) => x.contem_id === p.id && x.status !== 'INATIVO').map((x) => ({ id: x.id, nome: x.nome, contem_qtd: x.contem_qtd })), tem_imagem: !!DB.imagens[p.id] || !!(p.gtin && DB.imagens['g:' + p.gtin]), ultimo_preco: u ? u.preco : null, ultimo_preco_data: u ? u.data : null }; };
 const hav = (a, b, c, d) => { const R = 6371, t = (x) => x * Math.PI / 180; const x = Math.sin(t(c - a) / 2) ** 2 + Math.cos(t(a)) * Math.cos(t(c)) * Math.sin(t(d - b) / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(x)); };
 function listaView(S, li) {
   const its = S.listaItens.filter((i) => i.lista_id === li.id);
   return { ...li, itens: its.length, comprados: its.filter((i) => i.comprado).length };
+}
+// ---------- Fase 8: pacotes, preços opcionais e lista = compra ----------
+const opcs = (S) => S.opcoes || (S.opcoes = []);
+const opcView = (S, o) => ({ id: o.id, produto_id: o.produto_id, rotulo: o.rotulo, preco: o.preco, loja_id: o.loja_id || null, loja_nome: o.loja_id ? (lojaOf(S, o.loja_id) || {}).nome || '' : null, qtd_min: o.qtd_min || null, status: o.status });
+const opcoesDe = (S, pid, lid) => opcs(S).filter((o) => o.produto_id === pid && o.status !== 'INATIVO' && (!o.loja_id || o.loja_id === lid)).sort((a, b) => a.preco - b.preco);
+function normalDe(S, pid, lid) {
+  if (lid) return precoEm(S, pid, lid);
+  const u = ultimoPago(S, pid);
+  return u ? { preco: u.preco, fonte: 'MEU', data: u.data } : null;
+}
+// Preço normal + opção aplicada sozinha (só as que têm quantidade mínima) + dica "levando mais fica mais barato"
+function precoItem(S, pid, lid, q) {
+  const n = normalDe(S, pid, lid), ops = opcoesDe(S, pid, lid), normal = n ? n.preco : null;
+  const auto = ops.filter((o) => o.qtd_min && q >= o.qtd_min && (normal == null || o.preco < normal)).sort((a, b) => a.preco - b.preco)[0] || null;
+  const atual = auto ? auto.preco : normal;
+  const prox = ops.filter((o) => o.qtd_min && q < o.qtd_min && (atual == null || o.preco < atual)).sort((a, b) => a.qtd_min - b.qtd_min)[0] || null;
+  return { preco_normal: normal, fonte: n ? n.fonte : null, preco: atual, opcao: auto ? opcView(S, auto) : null, opcoes: ops.map((o) => opcView(S, o)),
+    dica: prox ? { rotulo: prox.rotulo, preco: prox.preco, qtd_min: prox.qtd_min, economia_unidade: atual != null ? r2(atual - prox.preco) : null } : null };
+}
+function sugPacote(S, pid, lid, q, unit) {
+  if (unit == null) return null;
+  let best = null;
+  for (const pk of S.produtos.filter((x) => x.contem_id === pid && x.status !== 'INATIVO' && x.contem_qtd > 1)) {
+    const n = pk.contem_qtd;
+    if (q < n) continue;
+    const pp = normalDe(S, pk.id, lid);
+    if (!pp) continue;
+    const qp = Math.floor(q / n), resto = r2(q - qp * n), total = r2(qp * pp.preco + resto * unit), eco = r2(q * unit - total);
+    if (eco > 0.004 && (!best || eco > best.economia)) best = { produto_id: pk.id, nome: pk.nome, contem_qtd: n, qtd_pacotes: qp, resto, preco_pacote: pp.preco, total, economia: eco };
+  }
+  return best;
+}
+// Itens digitados à mão que parecem o produto (o servidor nunca une sozinho)
+function parecidosDe(S, lista_id, p, excetoId) {
+  const pt = norm(p.nome).split(/[^a-z0-9]+/).filter(Boolean);
+  return S.listaItens.filter((i) => {
+    if (i.lista_id !== lista_id || i.produto_id || i.comprado || i.id === excetoId) return false;
+    const ws = norm(i.descricao).split(/[^a-z0-9]+/).filter((w) => w.length >= 3);
+    return ws.length && ws.every((w) => pt.some((t) => t.startsWith(w) || (t.length >= 4 && w.startsWith(t))));
+  }).map((i) => ({ id: i.id, descricao: i.descricao, quantidade: i.quantidade }));
+}
+function sessItem(S, s, li) {
+  const p = li.produto_id && prodOf(S, li.produto_id), x = p ? precoItem(S, p.id, s.loja_id, li.quantidade) : null;
+  return { id: nid('si'), lista_item_id: li.id, produto_id: li.produto_id, descricao: li.descricao, quantidade: li.quantidade, unidade: p ? p.unidade : 'UN', preco_sugerido: x ? x.preco : null, preco_unitario: x ? x.preco : null, rotulo: x && x.opcao ? x.opcao.rotulo : '', manual: false, marcado: false, categoria_id: p ? p.categoria_id : 'c_merc' };
+}
+function repreco(S, s, si) {
+  if (si.manual || !si.produto_id) return;
+  const x = precoItem(S, si.produto_id, s.loja_id, si.quantidade);
+  si.preco_unitario = x.preco; si.preco_sugerido = x.preco; si.rotulo = x.opcao ? x.opcao.rotulo : '';
+}
+// A compra aberta e a lista são a mesma coisa: o que entra em uma aparece na outra; o mesmo item nunca fica dobrado
+function syncSess(S, s) {
+  if (s.status !== 'ABERTA') return;
+  const lis = S.listaItens.filter((i) => i.lista_id === s.lista_id);
+  for (const si of s.itens) {
+    if (si.lista_item_id && lis.some((l) => l.id === si.lista_item_id)) continue;
+    if (si.lista_item_id) { si._fora = true; continue; }   // tirado da lista de propósito (remover, trocar por pacote): sai da compra também
+    const ex = si.produto_id && lis.find((l) => l.produto_id === si.produto_id && !l.comprado);
+    if (ex) { si.lista_item_id = ex.id; continue; }   // só compras antigas (itens sem item de lista) são reparadas
+    const li = { id: nid('lx'), lista_id: s.lista_id, produto_id: si.produto_id, descricao: si.descricao, quantidade: si.quantidade, comprado: false };
+    S.listaItens.push(li); lis.push(li); si.lista_item_id = li.id;
+  }
+  const seen = new Map();
+  s.itens = s.itens.filter((si) => {
+    if (si._fora) return false;
+    const o = seen.get(si.lista_item_id);
+    if (!o) { seen.set(si.lista_item_id, si); return true; }
+    o.marcado = o.marcado || si.marcado;
+    if (o.preco_unitario == null) o.preco_unitario = si.preco_unitario;
+    return false;
+  });
+  for (const li of lis.filter((l) => !l.comprado)) {
+    const si = seen.get(li.id);
+    if (!si) { s.itens.push(sessItem(S, s, li)); continue; }
+    const p = li.produto_id && prodOf(S, li.produto_id);
+    si.produto_id = li.produto_id; si.descricao = li.descricao; if (p) si.unidade = p.unidade;
+    if (si.quantidade !== li.quantidade) { si.quantidade = li.quantidade; repreco(S, s, si); }
+    else if (si.preco_unitario == null) repreco(S, s, si);
+  }
+}
+function sessItemView(S, s, si) {
+  const x = si.produto_id ? precoItem(S, si.produto_id, s.loja_id, si.quantidade) : null;
+  const { manual, _fora, ...v } = si;
+  return { ...clone(v), rotulo: si.rotulo || '', preco_normal: x ? x.preco_normal : null, opcoes: x ? x.opcoes : [], dica: x ? x.dica : null };
+}
+function pacoteCampos(S, x, p) {
+  if (p.contem_id === undefined && p.contem_qtd === undefined) return;
+  if (p.contem_id === '' || p.contem_id === null) { x.contem_id = null; x.contem_qtd = null; return; }
+  const c = prodOf(S, p.contem_id !== undefined ? p.contem_id : x.contem_id);
+  if (!c || c.status === 'INATIVO') fail('Escolha o produto que vem dentro do pacote.');
+  if (c.id === x.id) fail('O pacote não pode conter ele mesmo.');
+  if (c.contem_id) fail('O produto escolhido já é um pacote; escolha a unidade.');
+  if (x.id && S.produtos.some((y) => y.contem_id === x.id)) fail('Este produto está dentro de outro pacote e não pode virar pacote.');
+  const q = Number(p.contem_qtd !== undefined ? p.contem_qtd : x.contem_qtd);
+  if (!Number.isInteger(q) || q < 2 || q > 999) fail('Quantidade do pacote: um número inteiro de 2 a 999.');
+  x.contem_id = c.id; x.contem_qtd = q;
 }
 // ---------- deslocamento (pessoal: cada pessoa vê só o seu) ----------
 const COMBS = [['GASOLINA', 'Gasolina', 'litro'], ['ETANOL', 'Etanol', 'litro'], ['DIESEL', 'Diesel', 'litro'], ['GNV', 'GNV', 'm³'], ['ELETRICO', 'Energia elétrica', 'kWh']];
@@ -728,7 +842,7 @@ function comparar(S, p) {
   return { origem, modo, lojas: out, melhor: out[0].loja_id, economia_vs_pior: r2(Math.max(0, Math.max(...out.filter((l) => l.cobertura >= 0.5).map((l) => l.total_final), out[0].total_final) - out[0].total_final)),
     compra_dividida: gs.length > 1 ? { lojas: gs, total: tot, custo_deslocamento: cd, total_final: r2(tot + cd), economia_vs_melhor: r2(out[0].total_final - tot - cd) } : null };
 }
-function sessaoView(S, s) { const l = lojaOf(S, s.loja_id); return { ...clone(s), loja: l ? { id: l.id, nome: l.nome } : null, lista_nome: (S.listas.find((x) => x.id === s.lista_id) || {}).nome || '' }; }
+function sessaoView(S, s) { const l = lojaOf(S, s.loja_id); return { ...clone(s), itens: s.itens.map((i) => sessItemView(S, s, i)), loja: l ? { id: l.id, nome: l.nome } : null, lista_nome: (S.listas.find((x) => x.id === s.lista_id) || {}).nome || '' }; }
 function registrarPreco(S, pid, lid, preco, data, origem, chave) {
   S.precos.push({ id: nid('pr'), produto_id: pid, loja_id: lid, preco: r2(preco), data: data || T, origem, chave_nfce: chave || null });
   const p = prodOf(S, pid), l = lojaOf(S, lid);
@@ -1090,8 +1204,8 @@ const R = {
   },
   'integridade.verificar': () => [],
   'produtos.listar': ({ texto, todos, offset = 0, limite = 50 }, { S }) => {
-    const t = norm(texto);
-    const f = S.produtos.filter((p) => (todos || p.status !== 'INATIVO') && (!t || norm(p.nome + ' ' + (p.marca || '') + ' ' + (p.gtin || '')).includes(t))).sort((a, b) => a.nome.localeCompare(b.nome));
+    const ws = norm(texto).split(/\s+/).filter(Boolean);
+    const f = S.produtos.filter((p) => (todos || p.status !== 'INATIVO') && (!ws.length || ((hay) => ws.every((w) => hay.includes(w)))(norm(p.nome + ' ' + (p.marca || '') + ' ' + (p.gtin || ''))))).sort((a, b) => a.nome.localeCompare(b.nome));
     return { total: f.length, itens: f.slice(offset, offset + limite).map((p) => viewProd(S, p)) };
   },
   'produtos.salvar': (p, { S }) => {
@@ -1101,11 +1215,13 @@ const R = {
       ['nome', 'marca', 'unidade', 'categoria_id', 'status'].forEach((k) => { if (p[k] !== undefined) x[k] = p[k]; });
       if (p.tam_embalagem !== undefined) { if (p.tam_embalagem !== '' && p.tam_embalagem !== null && tamNum(p.tam_embalagem) === null) fail('Informe só o número do tamanho da embalagem (ex.: 500); a unidade é a escolhida no produto.'); x.tam_embalagem = tamNum(p.tam_embalagem) || 1; }
       if (p.gtin && !x.gtin) x.gtin = p.gtin;
+      pacoteCampos(S, x, p);
       x.versao++; return viewProd(S, x);
     }
     if (!String(p.nome || '').trim()) fail('Dê um nome ao produto.');
     if (p.gtin && S.produtos.some((x) => x.gtin === p.gtin)) fail('Já existe um produto com este código de barras.');
-    const x = { id: nid('p'), nome: p.nome.trim(), marca: p.marca || null, gtin: p.gtin || null, unidade: p.unidade || 'UN', tam_embalagem: tamNum(p.tam_embalagem) || 1, categoria_id: p.categoria_id || null, status: 'ATIVO', versao: 1, global_id: p.gtin ? nid('g') : null };
+    const x = { id: nid('p'), nome: p.nome.trim(), marca: p.marca || null, gtin: p.gtin || null, unidade: p.unidade || 'UN', tam_embalagem: tamNum(p.tam_embalagem) || 1, categoria_id: p.categoria_id || null, status: 'ATIVO', versao: 1, global_id: p.gtin ? nid('g') : null, contem_id: null, contem_qtd: null };
+    pacoteCampos(S, x, p);
     S.produtos.push(x); return viewProd(S, x);
   },
   'produtos.porGtin': ({ gtin: g }, { S }) => {
@@ -1154,6 +1270,22 @@ const R = {
     return { status: o.status, confirmacoes: o.confirmacoes, discordancias: o.discordancias };
   },
   'precos.historico': ({ produto_id, loja_id }, { S }) => S.precos.filter((x) => (!produto_id || x.produto_id === produto_id) && (!loja_id || x.loja_id === loja_id)).sort((a, b) => (a.data < b.data ? 1 : -1)).map((x) => ({ ...x, loja: (lojaOf(S, x.loja_id) || {}).nome || '', produto: (prodOf(S, x.produto_id) || {}).nome || '' })),
+  'precos.opcoes': ({ produto_id, loja_id }, { S }) => opcs(S).filter((o) => o.produto_id === produto_id && o.status !== 'INATIVO' && (!loja_id || !o.loja_id || o.loja_id === loja_id)).sort((a, b) => a.preco - b.preco).map((o) => opcView(S, o)),
+  'precos.opcoes.salvar': (p, { S }) => {
+    const val = (o) => {
+      if (p.rotulo !== undefined) { const r = String(p.rotulo || '').trim(); if (!r) fail('Dê um nome ao preço (ex.: Atacado).'); if (r.length > 30) fail('Nome do preço: até 30 letras.'); o.rotulo = r; }
+      if (p.preco !== undefined) { const v = Number(p.preco); if (!(v > 0)) fail('Informe o preço.'); o.preco = r2(v); }
+      if (p.loja_id !== undefined) { if (p.loja_id && !lojaOf(S, p.loja_id)) fail('Loja não encontrada.'); o.loja_id = p.loja_id || null; }
+      if (p.qtd_min !== undefined) { if (p.qtd_min === null || p.qtd_min === '') o.qtd_min = null; else { const q = Number(p.qtd_min); if (!Number.isInteger(q) || q < 2) fail('A partir de: um número inteiro a partir de 2.'); o.qtd_min = q; } }
+      if (p.status !== undefined) { if (!['ATIVO', 'INATIVO'].includes(p.status)) fail('Situação inválida.'); o.status = p.status; }
+    };
+    if (p.id) { const o = opcs(S).find((x) => x.id === p.id) || fail('Preço não encontrado.'); val(o); return opcView(S, o); }
+    if (!prodOf(S, p.produto_id)) fail('Produto não encontrado.');
+    if (p.rotulo === undefined) fail('Dê um nome ao preço (ex.: Atacado).');
+    if (p.preco === undefined) fail('Informe o preço.');
+    const o = { id: nid('op'), produto_id: p.produto_id, rotulo: '', preco: 0, loja_id: null, qtd_min: null, status: 'ATIVO' };
+    val(o); opcs(S).push(o); return opcView(S, o);
+  },
   'precos.evolucao': ({ produto_id, loja_id }, { S }) => {
     const pts = S.precos.filter((x) => x.produto_id === produto_id && (!loja_id || x.loja_id === loja_id)).sort((a, b) => (a.data < b.data ? -1 : 1)).map((x) => ({ data: x.data, preco: x.preco, loja: (lojaOf(S, x.loja_id) || {}).nome || '' }));
     if (!pts.length) return { pontos: [], resumo: null };
@@ -1252,26 +1384,35 @@ const R = {
   },
   'listas.listar': (p, { S }) => S.listas.filter((l) => l.status !== 'ARQUIVADA').map((l) => listaView(S, l)),
   'listas.criar': ({ nome }, { S }) => { if (!String(nome || '').trim()) fail('Dê um nome à lista.'); const l = { id: nid('li'), nome: nome.trim(), status: 'ATIVA', criado_em: now(), atualizado_em: now() }; S.listas.push(l); return listaView(S, l); },
-  'listas.arquivar': ({ id }, { S }) => { const l = S.listas.find((x) => x.id === id) || fail('Lista não encontrada.'); l.status = 'ARQUIVADA'; return listaView(S, l); },
+  'listas.arquivar': ({ id }, { S }) => { const l = S.listas.find((x) => x.id === id) || fail('Lista não encontrada.'); l.status = 'ARQUIVADA'; S.sessoes.forEach((s) => { if (s.lista_id === id && s.status === 'ABERTA') s.status = 'CANCELADA'; }); return listaView(S, l); },
   'listas.detalhe': ({ id, loja_id }, { S }) => {
     const l = S.listas.find((x) => x.id === id) || fail('Lista não encontrada.');
-    let tot = 0, sem = 0;
+    let tot = 0, sem = 0, eco = 0;
     const itens = S.listaItens.filter((i) => i.lista_id === id).map((i) => {
-      const x = loja_id && i.produto_id ? precoEm(S, i.produto_id, loja_id) : !loja_id && i.produto_id ? (() => { const u = ultimoPago(S, i.produto_id); return u ? { preco: u.preco, fonte: 'MEU' } : null; })() : null;
-      if (!i.comprado) { if (x) tot += x.preco * i.quantidade; else sem++; }
       const p = i.produto_id && prodOf(S, i.produto_id);
-      return { ...i, unidade: p ? p.unidade : 'UN', tem_imagem: p ? viewProd(S, p).tem_imagem : false, preco_estimado: x ? x.preco : null, preco_fonte: x ? x.fonte : null };
+      const x = p ? precoItem(S, p.id, loja_id, i.quantidade) : null;
+      const sp = p && !i.comprado && x ? sugPacote(S, p.id, loja_id, i.quantidade, x.preco) : null;
+      if (!i.comprado) { if (x && x.preco != null) tot += x.preco * i.quantidade; else sem++; if (sp) eco += sp.economia; }
+      return { ...i, unidade: p ? p.unidade : 'UN', tem_imagem: p ? viewProd(S, p).tem_imagem : false, contem_qtd: p && p.contem_id ? p.contem_qtd : null,
+        preco_estimado: x ? x.preco : null, preco_fonte: x && x.preco != null ? (x.opcao ? 'MEU' : x.fonte) : null, preco_normal: x ? x.preco_normal : null,
+        opcao: x ? x.opcao : null, opcoes: x ? x.opcoes : [], dica: x ? x.dica : null, sugestao_pacote: sp };
     });
-    return { ...listaView(S, l), loja_id: loja_id || null, itens, total_estimado: r2(tot), itens_sem_preco: sem };
+    return { ...listaView(S, l), loja_id: loja_id || null, itens, total_estimado: r2(tot), itens_sem_preco: sem, economia_pacotes: r2(eco) };
   },
   'listas.item.adicionar': ({ lista_id, produto_id, descricao, quantidade }, { S }) => {
-    if (!S.listas.find((x) => x.id === lista_id)) fail('Lista não encontrada.');
+    const l = S.listas.find((x) => x.id === lista_id);
+    if (!l || l.status === 'ARQUIVADA') fail('Lista não encontrada.');
     const p = produto_id && prodOf(S, produto_id);
+    if (produto_id && !p) fail('Produto não encontrado.');
     if (!p && !String(descricao || '').trim()) fail('Informe o item.');
-    const ex = p && S.listaItens.find((i) => i.lista_id === lista_id && i.produto_id === p.id && !i.comprado);
-    if (ex) { ex.quantidade = r2(ex.quantidade + (Number(quantidade) || 1)); return ex; }
-    const it = { id: nid('lx'), lista_id, produto_id: p ? p.id : null, descricao: p ? p.nome : descricao.trim(), quantidade: Number(quantidade) || 1, comprado: false };
-    S.listaItens.push(it); return it;
+    const q = Number(quantidade) || 1;
+    if (!(q > 0) || q > 9999) fail('Quantidade inválida.');
+    const ex = p ? S.listaItens.find((i) => i.lista_id === lista_id && i.produto_id === p.id && !i.comprado)
+      : S.listaItens.find((i) => i.lista_id === lista_id && !i.produto_id && !i.comprado && norm(i.descricao) === norm(descricao));
+    if (ex) { ex.quantidade = r2(ex.quantidade + q); return { ...ex, ja_existia: true, parecidos: p ? parecidosDe(S, lista_id, p, ex.id) : [] }; }
+    const it = { id: nid('lx'), lista_id, produto_id: p ? p.id : null, descricao: p ? p.nome : descricao.trim(), quantidade: q, comprado: false };
+    S.listaItens.push(it);
+    return { ...it, ja_existia: false, parecidos: p ? parecidosDe(S, lista_id, p, it.id) : [] };
   },
   'listas.item.atualizar': ({ id, quantidade, remover, comprado }, { S }) => {
     const it = S.listaItens.find((i) => i.id === id) || fail('Item não encontrado.');
@@ -1280,33 +1421,103 @@ const R = {
     if (comprado != null) it.comprado = !!comprado;
     return it;
   },
+  'listas.item.vincular': ({ id, produto_id }, { S }) => {
+    const it = S.listaItens.find((i) => i.id === id) || fail('Item não encontrado.');
+    const p = prodOf(S, produto_id);
+    if (!p || p.status === 'INATIVO') fail('Produto não encontrado.');
+    if (it.produto_id === p.id) return { ...it, unido: false };
+    const ex = S.listaItens.find((i) => i.lista_id === it.lista_id && i.produto_id === p.id && !i.comprado && i !== it);
+    let alvo = it;
+    if (ex) { ex.quantidade = Math.max(ex.quantidade, it.quantidade); S.listaItens = S.listaItens.filter((i) => i !== it); alvo = ex; }
+    else { it.produto_id = p.id; it.descricao = p.nome; }
+    S.sessoes.filter((s) => s.lista_id === it.lista_id && s.status === 'ABERTA').forEach((s) => {
+      s.itens.forEach((si) => { if (si.lista_item_id === it.id) { si.lista_item_id = alvo.id; si.produto_id = p.id; si.descricao = p.nome; } });
+      syncSess(S, s);
+    });
+    return { ...alvo, unido: !!ex };
+  },
+  'listas.item.usar_pacote': ({ id, pacote_id }, { S }) => {
+    const it = S.listaItens.find((i) => i.id === id) || fail('Item não encontrado.');
+    const pk = prodOf(S, pacote_id);
+    if (!pk || !it.produto_id || pk.contem_id !== it.produto_id) fail('Este pacote não contém o produto do item.');
+    const n = pk.contem_qtd, qp = Math.floor(it.quantidade / n);
+    if (qp < 1) fail('A quantidade ainda não chega a um pacote com ' + n + '.');
+    const resto = r2(it.quantidade - qp * n);
+    let alvo = S.listaItens.find((i) => i.lista_id === it.lista_id && i.produto_id === pk.id && !i.comprado);
+    if (alvo) alvo.quantidade = r2(alvo.quantidade + qp);
+    else { alvo = { id: nid('lx'), lista_id: it.lista_id, produto_id: pk.id, descricao: pk.nome, quantidade: qp, comprado: false }; S.listaItens.push(alvo); }
+    if (resto > 0) it.quantidade = resto; else S.listaItens = S.listaItens.filter((i) => i !== it);
+    S.sessoes.filter((s) => s.lista_id === it.lista_id && s.status === 'ABERTA').forEach((s) => {
+      // sem sobra: o item da compra (marcado ou não) passa a ser o pacote; com sobra, ele continua como as unidades avulsas
+      if (!(resto > 0)) s.itens.forEach((si) => { if (si.lista_item_id === it.id) Object.assign(si, { lista_item_id: alvo.id, produto_id: pk.id, descricao: pk.nome, unidade: pk.unidade, manual: false, rotulo: '' }); });
+      syncSess(S, s);
+    });
+    return { item: alvo, resto, resto_item: resto > 0 ? it : null };
+  },
   'sessoes.iniciar': ({ lista_id, loja_id, recurso_id }, { S }) => {
     const l = S.listas.find((x) => x.id === lista_id) || fail('Lista não encontrada.');
+    if (l.status === 'ARQUIVADA') fail('Esta lista foi arquivada.');
     if (!lojaOf(S, loja_id)) fail('Escolha a loja.');
     const ab = S.sessoes.find((s) => s.lista_id === l.id && s.status === 'ABERTA');
-    if (ab) return sessaoView(S, ab);
-    const s = { id: nid('se'), lista_id, loja_id, recurso_id: recurso_id || null, status: 'ABERTA', criado_em: now(),
-      itens: S.listaItens.filter((i) => i.lista_id === lista_id && !i.comprado).map((i) => { const x = i.produto_id && precoEm(S, i.produto_id, loja_id); const p = i.produto_id && prodOf(S, i.produto_id); return { id: nid('si'), lista_item_id: i.id, produto_id: i.produto_id, descricao: i.descricao, quantidade: i.quantidade, unidade: p ? p.unidade : 'UN', preco_sugerido: x ? x.preco : null, preco_unitario: x ? x.preco : null, marcado: false, categoria_id: p ? p.categoria_id : 'c_merc' }; }) };
-    S.sessoes.push(s); return sessaoView(S, s);
+    if (ab) { syncSess(S, ab); return sessaoView(S, ab); }
+    const s = { id: nid('se'), lista_id, loja_id, recurso_id: recurso_id || null, status: 'ABERTA', criado_em: now(), itens: [] };
+    S.sessoes.push(s); syncSess(S, s); return sessaoView(S, s);
   },
-  'sessoes.listar': ({ lista_id, status }, { S }) => S.sessoes.filter((s) => (!lista_id || s.lista_id === lista_id) && (!status || s.status === status)).map((s) => sessaoView(S, s)),
-  'sessoes.detalhe': ({ id }, { S }) => sessaoView(S, S.sessoes.find((s) => s.id === id) || fail('Compra não encontrada.')),
-  'sessoes.item.salvar': ({ id, preco_unitario, quantidade, marcado, categoria_id }, { S }) => {
+  'sessoes.listar': ({ lista_id, status }, { S }) => S.sessoes.filter((s) => (!lista_id || s.lista_id === lista_id) && (!status || s.status === status) && (s.status !== 'ABERTA' || (S.listas.find((l) => l.id === s.lista_id) || {}).status === 'ATIVA')).map((s) => { syncSess(S, s); return sessaoView(S, s); }),
+  'sessoes.detalhe': ({ id }, { S }) => { const s = S.sessoes.find((x) => x.id === id) || fail('Compra não encontrada.'); syncSess(S, s); return sessaoView(S, s); },
+  'sessoes.sincronizar': ({ id }, { S }) => { const s = S.sessoes.find((x) => x.id === id) || fail('Compra não encontrada.'); syncSess(S, s); return sessaoView(S, s); },
+  'sessoes.item.salvar': ({ id, preco_unitario, quantidade, marcado, categoria_id, opcao_id, rotulo }, { S }) => {
     const s = S.sessoes.find((x) => x.itens.some((i) => i.id === id)) || fail('Item não encontrado.');
     if (s.status !== 'ABERTA') fail('Esta compra já foi encerrada.');
     const it = s.itens.find((i) => i.id === id);
-    if (preco_unitario !== undefined) it.preco_unitario = preco_unitario == null ? null : r2(preco_unitario);
-    if (quantidade !== undefined) it.quantidade = Math.max(0.001, Number(quantidade));
+    if (opcao_id) {
+      const o = opcs(S).find((x) => x.id === opcao_id && x.produto_id === it.produto_id && x.status !== 'INATIVO' && (!x.loja_id || x.loja_id === s.loja_id)) || fail('Este preço não vale mais. Escolha outro.');
+      it.preco_unitario = o.preco; it.rotulo = o.rotulo; it.manual = true;
+    } else if (preco_unitario !== undefined) {
+      if (preco_unitario != null && !(Number(preco_unitario) > 0)) fail('Informe um preço maior que zero.');
+      it.preco_unitario = preco_unitario == null ? null : r2(preco_unitario); it.manual = preco_unitario != null;
+      const rt = String(rotulo || '').trim();
+      if (rt.length > 30) fail('Nome do preço: até 30 letras.');
+      if (rt && it.produto_id && it.preco_unitario > 0) {
+        const o = opcs(S).find((x) => x.produto_id === it.produto_id && x.status !== 'INATIVO' && norm(x.rotulo) === norm(rt) && (x.loja_id || null) === s.loja_id);
+        if (o) o.preco = it.preco_unitario; else opcs(S).push({ id: nid('op'), produto_id: it.produto_id, rotulo: rt, preco: it.preco_unitario, loja_id: s.loja_id, qtd_min: null, status: 'ATIVO' });
+      }
+      it.rotulo = rt;
+    }
+    if (quantidade !== undefined) {
+      it.quantidade = Math.max(0.001, Number(quantidade));
+      const li = S.listaItens.find((x) => x.id === it.lista_item_id);
+      if (li) li.quantidade = it.quantidade;
+      if (preco_unitario === undefined && !opcao_id) repreco(S, s, it);
+    }
     if (marcado !== undefined) it.marcado = !!marcado;
     if (categoria_id !== undefined) it.categoria_id = categoria_id;
-    return it;
+    return sessItemView(S, s, it);
   },
   'sessoes.item.adicionar': ({ sessao_id, produto_id, descricao, quantidade, preco_unitario }, { S }) => {
     const s = S.sessoes.find((x) => x.id === sessao_id) || fail('Compra não encontrada.');
+    if (s.status !== 'ABERTA') fail('Esta compra já foi encerrada.');
     const p = produto_id && prodOf(S, produto_id);
+    if (produto_id && !p) fail('Produto não encontrado.');
     if (!p && !String(descricao || '').trim()) fail('Informe o item.');
-    const it = { id: nid('si'), lista_item_id: null, produto_id: p ? p.id : null, descricao: p ? p.nome : descricao.trim(), quantidade: Number(quantidade) || 1, unidade: p ? p.unidade : 'UN', preco_sugerido: null, preco_unitario: preco_unitario != null ? r2(preco_unitario) : null, marcado: true, categoria_id: p ? p.categoria_id : 'c_merc' };
-    s.itens.push(it); return it;
+    const q = Number(quantidade) || 1;
+    syncSess(S, s);
+    const ex = p ? s.itens.find((i) => i.produto_id === p.id) : s.itens.find((i) => !i.produto_id && norm(i.descricao) === norm(descricao));
+    if (ex) {
+      if (ex.marcado) ex.quantidade = r2(ex.quantidade + q);
+      ex.marcado = true;
+      const li = S.listaItens.find((x) => x.id === ex.lista_item_id);
+      if (li) li.quantidade = ex.quantidade;
+      if (preco_unitario != null) { ex.preco_unitario = r2(preco_unitario); ex.manual = true; ex.rotulo = ''; } else repreco(S, s, ex);
+      return { ...sessItemView(S, s, ex), ja_existia: true, parecidos: p ? parecidosDe(S, s.lista_id, p, ex.lista_item_id) : [] };
+    }
+    const li = { id: nid('lx'), lista_id: s.lista_id, produto_id: p ? p.id : null, descricao: p ? p.nome : descricao.trim(), quantidade: q, comprado: false };
+    S.listaItens.push(li);
+    const it = sessItem(S, s, li);
+    it.marcado = true;
+    if (preco_unitario != null) { it.preco_unitario = r2(preco_unitario); it.manual = true; it.rotulo = ''; }
+    s.itens.push(it);
+    return { ...sessItemView(S, s, it), ja_existia: false, parecidos: p ? parecidosDe(S, s.lista_id, p, li.id) : [] };
   },
   'sessoes.concluir': (p, { S }) => {
     const s = S.sessoes.find((x) => x.id === p.id) || fail('Compra não encontrada.');
@@ -1451,7 +1662,7 @@ function histView(S, x) {
 export async function handle(action, p) {
   if (!DB) seed();
   const [a, b] = flags.lento ? [1000, 3000] : (window.NEXORA_CONFIG || {}).latenciaDemo || [300, 1100];
-  const write = !/listar|detalhe|historico|situacao|relatorios|bootstrap|porGtin|imagens|proximas|compartilhados|evolucao|alertas|minha|ler|interpretar|painel|catalogo|contar|recebidos|enviados|preferencias$|denuncias$|cpf$/.test(action);
+  const write = !/listar|detalhe|historico|situacao|relatorios|bootstrap|porGtin|imagens|proximas|compartilhados|evolucao|alertas|minha|ler|interpretar|painel|catalogo|contar|recebidos|enviados|preferencias$|denuncias$|cpf$|opcoes$/.test(action);
   await sleep(a + Math.random() * (b - a) * (write ? 1.6 : 1) + (flags.lento && write ? 2000 : 0));
   if (flags.offline || !navigator.onLine) throw new TypeError('offline');
   if (flags.falhar) { flags.falhar = false; sset(FK, flags); throw new TypeError('falha simulada'); }

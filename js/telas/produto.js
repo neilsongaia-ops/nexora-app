@@ -1,4 +1,4 @@
-// Produto: foto, dados, evolução de preço, meu histórico, preços da comunidade (confirmar/mudou), registrar preço, denunciar
+// Produto: foto, dados, pacote (nos dois sentidos), evolução de preço, outros preços (opcionais), meu histórico, preços da comunidade, registrar preço, denunciar
 import { h, money, dmy, relDate, uuid, emit, monthShort, HOJE, num, embalagem } from '../util.js';
 import { icon } from '../icons.js';
 import { call, load } from '../api.js';
@@ -6,9 +6,9 @@ import { store, can, catNome } from '../store.js';
 import { openSheet, openMenu, pick, confirmSheet } from '../ui/sheet.js';
 import { toast } from '../ui/toast.js';
 import { chooseImage, imageToThumb, capturePhoto } from '../ui/media.js';
-import { card, row, badge, empty, errorState, skelRows, skelCards, sectionHead, btn, iconBtn, thumb, forgetImg, moneyField, pickField, dateField, formError, tip } from '../ui/components.js';
+import { card, row, badge, empty, errorState, skelRows, skelCards, sectionHead, btn, iconBtn, thumb, forgetImg, moneyField, pickField, dateField, formError, tip, textField, chip } from '../ui/components.js';
 import { line } from '../ui/charts.js';
-import { produtoForm, denunciar, lojaForm } from './compras.js';
+import { produtoForm, denunciar, lojaForm, addLista, pacoteTxt, unidadeTxt } from './compras.js';
 
 export default async function produto(ctx, id) {
   const { view, setTitle, go } = ctx;
@@ -33,12 +33,19 @@ export default async function produto(ctx, id) {
   }
   const photo = h('button', { class: 'photo-btn', type: 'button', 'aria-label': 'Foto do produto', onclick: () => fotoMenu() }, thumb(p, 'is-lg'));
   view.append(h('div', { class: 'prod-head' }, photo, h('div', { class: 'prod-head-txt' }, h('h2', { class: 'prod-name' }, p.nome),
-    h('div', { class: 'prod-meta' }, [p.marca, embalagem(p), p.unidade === 'KG' || p.unidade === 'L' ? 'vendido por ' + p.unidade.toLowerCase() : null].filter(Boolean).map((x) => h('span', {}, x)), p.categoria_id ? h('span', {}, catNome(p.categoria_id)) : null),
+    h('div', { class: 'prod-meta' }, [p.marca, pacoteTxt(p) || embalagem(p), unidadeTxt(p), p.unidade === 'KG' || p.unidade === 'L' ? 'vendido por ' + p.unidade.toLowerCase() : null].filter(Boolean).map((x) => h('span', {}, x)), p.categoria_id ? h('span', {}, catNome(p.categoria_id)) : null),
     p.gtin ? h('span', { class: 'prod-meta num' }, icon('barcode'), p.gtin) : badge('Sem código: só neste espaço', 'neutral'))));
+  // Ligação do pacote nos dois sentidos
+  const links = [
+    p.contem_id ? row({ lead: h('span', { class: 'tipo-ico' }, icon('bag')), title: `Contém ${p.contem_qtd} × ${p.contem_nome || 'unidade'}`, sub: unidadeTxt(p) || null, trail: icon('chevR', 'muted'), onClick: () => go('/compras/produto/' + p.contem_id) }) : null,
+    ...(p.pacotes || []).map((x) => row({ lead: h('span', { class: 'tipo-ico' }, icon('bag')), title: 'Também vendida em: pacote com ' + x.contem_qtd, sub: x.nome, trail: icon('chevR', 'muted'), onClick: () => go('/compras/produto/' + x.id) })),
+  ].filter(Boolean);
+  if (links.length) view.append(h('div', { class: 'list' }, links));
   const evo = card('sec-card', sectionHead('Evolução do preço'), skelCards(1));
+  const opc = h('section', { class: 'sec' }, sectionHead('Outros preços'), skelRows(2));
   const comm = h('section', { class: 'sec' }, sectionHead('Preços da comunidade', tip('Preços de outras pessoas, sem identificar ninguém. Verificado = confirmado por nota ou por várias pessoas.')), skelRows(3));
   const mine = h('section', { class: 'sec' }, sectionHead('Meu histórico'), skelRows(3));
-  view.append(h('div', { class: 'cols' }, h('div', { class: 'sec' }, evo, mine), comm));
+  view.append(h('div', { class: 'cols' }, h('div', { class: 'sec' }, evo, opc, mine), comm));
   if (ed) ctx.setFab({ label: 'Registrar preço', icon: 'tag', onClick: () => registrar(p) });
 
   load('precos.evolucao', { produto_id: id }).then((e) => {
@@ -75,6 +82,58 @@ export default async function produto(ctx, id) {
     return el;
   }
   drawComm();
+
+  // Outros preços (atacado, app, cartão da loja…): ficam no espaço da pessoa, nunca viram o preço normal nem vão para a base colaborativa
+  let lojasOpc = [];
+  const opcHead = () => sectionHead('Outros preços', ed ? btn('Adicionar preço', { kind: 'ghost', size: 'sm', icon: 'plus', onClick: () => opcaoForm(null) }) : null);
+  async function drawOpc() {
+    try {
+      const [os, ljs] = await Promise.all([call('precos.opcoes', { produto_id: id }), load('lojas.listar', {}).catch(() => [])]);
+      lojasOpc = ljs;
+      if (!os.length && !ed) { opc.hidden = true; return; }
+      opc.hidden = false;
+      opc.replaceChildren(opcHead(), os.length ? h('div', { class: 'list' }, os.map((o) => row({
+        lead: h('span', { class: 'tipo-ico tone-xfer' }, icon('tag')), title: o.rotulo,
+        sub: [o.loja_id ? o.loja_nome || 'Loja' : 'Qualquer loja', o.qtd_min ? `a partir de ${num(o.qtd_min)} un.` : null].filter(Boolean).join(' · '),
+        trail: h('span', { class: 'num' }, money(o.preco)), onClick: ed ? () => opcaoForm(o) : null,
+      }))) : empty({ ic: 'tag', title: 'Nenhum outro preço' }));
+    } catch (x) { opc.replaceChildren(opcHead(), errorState(x.message, drawOpc)); }
+  }
+  function opcaoForm(o) {
+    const st = { rotulo: o ? o.rotulo : '', preco: o ? o.preco : 0, loja_id: o ? o.loja_id : null, qtd_min: o && o.qtd_min ? String(o.qtd_min) : '' };
+    const err = formError(), rid = uuid();
+    const nf = textField('Nome', { value: st.rotulo, placeholder: 'Ex.: Atacado', maxlength: 30, autofocus: !o, onInput: (v) => { st.rotulo = v; nf.setError(''); drawSug(); } });
+    const sugs = h('div', { class: 'chip-row' });
+    const drawSug = () => sugs.replaceChildren(...['Atacado', 'App', 'Cartão da loja', 'Promoção'].map((t) => chip(t, { selected: st.rotulo.trim() === t, onClick: () => { st.rotulo = t; nf.input.value = t; nf.setError(''); drawSug(); } })));
+    drawSug();
+    const mf = moneyField('Preço', { value: st.preco, onChange: (v) => { st.preco = v; mf.setError(''); } });
+    const lf = pickField('Loja', { value: st.loja_id, items: () => [{ value: null, label: 'Qualquer loja', icon: 'store' }, ...lojasOpc.map((l) => ({ value: l.id, label: l.nome, icon: 'store', sub: l.cidade || null }))], onChange: (v) => { st.loja_id = v; lf.setError(''); } });
+    const qf = textField('A partir de', { value: st.qtd_min, inputmode: 'numeric', placeholder: 'Opcional', maxlength: 4, tipText: 'Se preencher, o app aplica sozinho quando a quantidade bater', onInput: (v) => { st.qtd_min = v.replace(/\D/g, ''); qf.input.value = st.qtd_min; qf.setError(''); } });
+    const campo = (m) => (/nome/i.test(m) ? nf : /a partir|quantidade/i.test(m) ? qf : /loja/i.test(m) ? lf : /pre[cç]o/i.test(m) ? mf : null);
+    const b = btn(o ? 'Salvar' : 'Adicionar preço', { size: 'lg', full: true });
+    const enviar = async (pl, ok) => {
+      b.disabled = true; b.setAttribute('aria-busy', 'true'); err.show('');
+      try { await call('precos.opcoes.salvar', pl, { rid }); await sh.close(); toast(ok, { tone: 'success' }); drawOpc(); }
+      catch (e) { const f = campo(e.message); if (f) f.setError(e.message); else err.show(e.message); }
+      finally { b.disabled = false; b.removeAttribute('aria-busy'); }
+    };
+    b.onclick = () => {
+      let bad = false;
+      if (!st.rotulo.trim()) { nf.setError('Dê um nome'); bad = true; }
+      if (!(st.preco > 0)) { mf.setError('Informe o preço'); bad = true; }
+      if (st.qtd_min && Number(st.qtd_min) < 2) { qf.setError('A partir de 2'); bad = true; }
+      if (bad) return;
+      const pl = { rotulo: st.rotulo.trim(), preco: st.preco, loja_id: st.loja_id || (o ? '' : undefined), qtd_min: st.qtd_min ? Number(st.qtd_min) : o ? null : undefined };
+      if (o) pl.id = o.id; else pl.produto_id = id;
+      enviar(pl, o ? 'Preço atualizado.' : 'Preço adicionado.');
+    };
+    const inat = o ? btn('Inativar este preço', { kind: 'ghost', icon: 'ban', full: true, onClick: async () => {
+      if (!(await confirmSheet({ title: `Inativar “${o.rotulo}”?`, confirm: 'Inativar', tone: 'danger' }))) return;
+      try { await call('precos.opcoes.salvar', { id: o.id, status: 'INATIVO' }, { rid: uuid() }); await sh.close(); toast('Preço inativado.', { tone: 'success' }); drawOpc(); } catch (e) { err.show(e.message); }
+    } }) : null;
+    const sh = openSheet({ title: o ? o.rotulo : 'Outro preço', footer: b, content: [err, nf, sugs, mf, lf, qf, inat] });
+  }
+  drawOpc();
 
   function fotoMenu() {
     if (!ed) return;
@@ -124,10 +183,4 @@ export async function registrar(p) {
     catch (e) { err.show(e.message); } finally { b.disabled = false; b.removeAttribute('aria-busy'); }
   };
   const s = openSheet({ title: 'Preço de ' + p.nome, footer: b, content: [err, mf, lf, dateField('Data', { value: HOJE, max: HOJE, onChange: (v) => { data = v; } })] });
-}
-async function addLista(p) {
-  const ls = await load('listas.listar', {}).catch(() => []);
-  const v = await pick({ title: 'Adicionar a', items: ls.map((l) => ({ value: l.id, label: l.nome, icon: 'bag' })), emptyText: 'Crie uma lista primeiro' });
-  if (!v) return;
-  try { await call('listas.item.adicionar', { lista_id: v, produto_id: p.id, quantidade: 1 }, { rid: uuid() }); toast('Adicionado à lista.', { tone: 'success' }); } catch (e) { toast(e.message, { tone: 'danger' }); }
 }

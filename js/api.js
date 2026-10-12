@@ -16,7 +16,7 @@ export const READS = new Set(['bootstrap', 'ws.listar', 'membros.listar', 'recur
   'lancamentos.listar', 'lancamentos.detalhe', 'lancamentos.historico', 'cartoes.situacao', 'faturas.listar', 'faturas.detalhe',
   'recorrencias.listar', 'planejamentos.listar', 'planejamentos.situacao', 'relatorios.painel', 'relatorios.saldos',
   'relatorios.resultado', 'relatorios.fluxo', 'relatorios.serie', 'integridade.verificar', 'produtos.listar', 'produtos.porGtin',
-  'produtos.imagens', 'lojas.listar', 'lojas.proximas', 'precos.compartilhados', 'precos.historico', 'precos.evolucao',
+  'produtos.imagens', 'lojas.listar', 'lojas.proximas', 'precos.compartilhados', 'precos.historico', 'precos.evolucao', 'precos.opcoes',
   'alertas.precos', 'reputacao.minha', 'config.ler', 'listas.listar', 'listas.detalhe', 'sessoes.listar', 'sessoes.detalhe',
   'comparacao.lista', 'nfce.interpretar', 'admin.painel', 'admin.catalogo', 'admin.denuncias', 'exportar.espaco', 'ws.resumo', 'ws.arquivados',
   'notificacoes.listar', 'notificacoes.contar', 'notificacoes.preferencias', 'convites.recebidos', 'convites.enviados',

@@ -1,14 +1,15 @@
 // Compras: listas, produtos e lojas (hub) + roteamento para lista, sessão, comparação e produto
-import { h, money, relDate, uuid, emit, dmy, initials, embalagem } from '../util.js';
+// Também: busca de produto em sheet, união de item digitado com produto, adicionar a uma lista e cadastro de pacote
+import { h, money, relDate, uuid, emit, dmy, initials, embalagem, debounce, haptic, num } from '../util.js';
 import { icon } from '../icons.js';
 import { call, load } from '../api.js';
 import { store, can, catNome } from '../store.js';
 import { openSheet, openMenu, pick, confirmSheet } from '../ui/sheet.js';
 import { toast } from '../ui/toast.js';
-import { infinite } from '../ui/gestures.js';
+import { infinite, swipeable, longPress } from '../ui/gestures.js';
 import { scanCode, geolocate } from '../ui/media.js';
 import { escolherNoMapa, coordTxt } from '../ui/mapa.js';
-import { segmented, card, row, badge, empty, errorState, skelRows, skelCards, btn, iconBtn, searchBox, thumb, textField, pickField, formError, chip, sectionHead } from '../ui/components.js';
+import { segmented, card, row, badge, empty, errorState, skelRows, skelCards, btn, iconBtn, searchBox, thumb, textField, pickField, formError, chip, sectionHead, field, toggle } from '../ui/components.js';
 import { categoriaItems } from './lancForm.js';
 
 export default async function compras(ctx) {
@@ -71,16 +72,99 @@ function produtos(ctx, body) {
     inf && inf.stop(); list.replaceChildren();
     inf = infinite({ container: list, skeleton: () => skelRows(4), limite: 40,
       load: (offset, limite) => call('produtos.listar', { texto: texto || undefined, offset, limite }),
-      render: (its) => its.forEach((p) => { store.produtos.set(p.id, p); list.append(prodRow(p, () => ctx.go('/compras/produto/' + p.id))); }),
+      render: (its) => its.forEach((p) => {
+        store.produtos.set(p.id, p);
+        const r = prodRow(p, () => ctx.go('/compras/produto/' + p.id));
+        if (!can('editor')) { list.append(r); return; }
+        longPress(r, () => openMenu({ title: p.nome, items: [
+          { icon: 'bag', label: 'Adicionar a uma lista', onClick: () => addLista(p) },
+          { icon: 'chevR', label: 'Ver produto', onClick: () => ctx.go('/compras/produto/' + p.id) },
+        ] }));
+        list.append(swipeable(r, { right: { label: 'Na lista', icon: 'bag', tone: 'xfer', run: () => addLista(p) } }));
+      }),
       onEmpty: () => list.replaceChildren(empty({ ic: 'tag', title: texto ? 'Nenhum produto encontrado' : 'Nenhum produto ainda', action: can('editor') ? btn(texto ? 'Cadastrar “' + texto + '”' : 'Cadastrar produto', { kind: 'secondary', icon: 'plus', onClick: () => produtoForm({ initial: { nome: texto }, onSaved: (p) => ctx.go('/compras/produto/' + p.id) }) }) : null })),
       onError: (e, retry) => list.append(errorState(e.message, retry)) });
   };
   ctx.onCleanup(() => inf && inf.stop());
   reload();
 }
+export const pacoteTxt = (p) => (p && p.contem_qtd ? 'Pacote com ' + p.contem_qtd : '');
+export const unidadeTxt = (p) => (p && p.contem_qtd && p.preco_unidade ? money(p.preco_unidade) + ' / un.' : '');
+export const prodSub = (p) => [p.marca, pacoteTxt(p) || embalagem(p)].filter(Boolean).join(' · ');
 export function prodRow(p, onClick, trail) {
-  return row({ lead: thumb(p), title: p.nome, sub: [p.marca, embalagem(p), p.gtin ? null : 'sem código'].filter(Boolean).join(' · '),
-    trail: trail !== undefined ? trail : p.ultimo_preco ? h('span', { class: 'num' }, money(p.ultimo_preco)) : null, trailSub: p.ultimo_preco_data ? relDate(p.ultimo_preco_data) : null, onClick });
+  return row({ lead: thumb(p), title: p.nome, sub: [prodSub(p), p.gtin ? null : 'sem código'].filter(Boolean).join(' · '),
+    trail: trail !== undefined ? trail : p.ultimo_preco ? h('span', { class: 'num' }, money(p.ultimo_preco)) : null, trailSub: unidadeTxt(p) || (p.ultimo_preco_data ? relDate(p.ultimo_preco_data) : null), onClick });
+}
+
+// Busca de produto em sheet (texto ou código). filtro: quais produtos servem (ex.: só unidades, nunca ele mesmo)
+export function buscarProduto({ title = 'Escolher produto', texto = '', filtro } = {}) {
+  return new Promise((res) => {
+    let chosen = null, seq = 0;
+    const list = h('div', { class: 'pick-list', role: 'listbox', 'aria-label': title }, skelRows(4));
+    const escolher = (p) => { chosen = p; haptic(6); s.close(); };
+    const draw = (its) => list.replaceChildren(...(its.length ? its.map((p) => h('button', { class: 'pick-item', type: 'button', role: 'option', onclick: () => escolher(p) },
+      thumb(p), h('span', { class: 'pick-text' }, h('span', { class: 'pick-label' }, p.nome), prodSub(p) ? h('span', { class: 'pick-sub' }, prodSub(p)) : null),
+      p.ultimo_preco ? h('span', { class: 'pick-right num' }, money(p.ultimo_preco)) : null)) : [h('p', { class: 'pick-empty' }, 'Nada encontrado')]));
+    const find = debounce(async (t) => {
+      const my = ++seq;
+      try {
+        const r = await load('produtos.listar', { texto: t || undefined, limite: 20 });
+        if (my !== seq) return;
+        r.itens.forEach((p) => store.produtos.set(p.id, p));
+        draw(r.itens.filter((p) => !filtro || filtro(p)));
+      } catch (e) { if (my === seq) list.replaceChildren(errorState(e.message, () => find(input.value.trim()))); }
+    }, 250);
+    const input = h('input', { type: 'search', placeholder: 'Buscar produto', 'aria-label': 'Buscar produto', value: texto, autofocus: true, enterkeyhint: 'search', oninput: (e) => find(e.target.value.trim()) });
+    input.dataset.forceFocus = '1';
+    const ler = async () => {
+      const c = await scanCode({ title: 'Ler código de barras' });
+      if (!c) return;
+      try {
+        const r = await call('produtos.porGtin', { gtin: c });
+        if (r.origem !== 'ESPACO') { toast('Produto não cadastrado neste espaço.', { ico: 'tag' }); return; }
+        store.produtos.set(r.produto.id, r.produto);
+        if (filtro && !filtro(r.produto)) { toast('Este produto não serve aqui.', { ico: 'tag' }); return; }
+        escolher(r.produto);
+      } catch (e) { toast(e.message, { tone: 'danger' }); }
+    };
+    const s = openSheet({ title, size: 'tall', content: [h('div', { class: 'toolbar' }, h('label', { class: 'search grow' }, icon('search'), input), btn('', { kind: 'secondary', icon: 'barcode', aria: 'Ler código de barras', onClick: ler })), list], onClose: () => res(chosen) });
+    find(texto.trim());
+  });
+}
+
+// Itens digitados à mão que parecem o produto: o servidor nunca une sozinho, a pessoa decide. Devolve quantos uniu.
+export async function talvezUnir(parecidos, produto) {
+  let n = 0;
+  for (const x of parecidos || []) {
+    const ok = await new Promise((res) => {
+      let r = false;
+      const s = openSheet({ title: 'Este item é o mesmo que “' + x.descricao + '”?',
+        content: h('div', { class: 'list' },
+          row({ lead: h('span', { class: 'thumb' }, h('span', { class: 'thumb-ph' }, icon('tag'))), title: x.descricao, sub: 'Digitado · ' + num(x.quantidade, 3) + '×' }),
+          row({ lead: thumb(produto), title: produto.nome, sub: prodSub(produto) || null })),
+        footer: h('div', { class: 'btn-row' }, btn('São diferentes', { kind: 'secondary', onClick: () => s.close() }), btn('Unir', { icon: 'check', onClick: () => { r = true; haptic(12); s.close(); } })),
+        onClose: () => res(r) });
+    });
+    if (!ok) continue;
+    try { const r = await call('listas.item.vincular', { id: x.id, produto_id: produto.id }, { rid: uuid() }); n++; toast('Unido: ' + r.descricao + (r.unido ? ' · ' + num(r.quantidade, 3) + '×' : ''), { tone: 'success', duration: 2200 }); }
+    catch (e) { toast(e.message, { tone: 'danger' }); }
+  }
+  return n;
+}
+
+// Adicionar produto a uma lista ativa (se só existe uma, vai direto)
+export async function addLista(p, { quantidade = 1 } = {}) {
+  const ls = await load('listas.listar', {}).catch(() => []);
+  const v = ls.length === 1 ? ls[0].id : await pick({ title: 'Adicionar a', items: ls.map((l) => ({ value: l.id, label: l.nome, icon: 'bag', sub: l.itens ? (l.itens - l.comprados) + ' a comprar' : 'Vazia' })), emptyText: 'Crie uma lista primeiro' });
+  if (!v) return null;
+  const nome = (ls.find((l) => l.id === v) || {}).nome || 'lista';
+  try {
+    const r = await call('listas.item.adicionar', { lista_id: v, produto_id: p.id, quantidade }, { rid: uuid() });
+    haptic(10);
+    toast(r.ja_existia ? 'Já estava em ' + nome + ': agora são ' + num(r.quantidade, 3) : 'Adicionado a ' + nome + '.', { tone: 'success', duration: 2200 });
+    if (r.parecidos && r.parecidos.length) await talvezUnir(r.parecidos, p);
+    return r;
+  } catch (e) { toast(e.message, { tone: 'danger' }); return null; }
 }
 
 export async function lerProduto(ctx, { onProduct } = {}) {
@@ -99,26 +183,59 @@ export async function lerProduto(ctx, { onProduct } = {}) {
 
 const UNID = ['UN', 'KG', 'G', 'L', 'ML'].map((u) => ({ value: u, label: { UN: 'Unidade', KG: 'Quilo (kg)', G: 'Grama (g)', L: 'Litro (L)', ML: 'Mililitro (ml)' }[u] }));
 export function produtoForm({ edit, initial = {}, fromCatalog, onSaved } = {}) {
-  const st = { nome: '', marca: '', gtin: '', unidade: 'UN', tam_embalagem: '', categoria_id: null, ...(edit || initial) };
+  const st = { nome: '', marca: '', gtin: '', unidade: 'UN', tam_embalagem: '', categoria_id: null, contem_id: null, contem_qtd: null, ...(edit || initial) };
   const err = formError(), rid = uuid();
-  const fn = textField('Nome', { value: st.nome, autofocus: !st.nome, onInput: (v) => { st.nome = v; fn.setError(''); } });
+  const fn = textField('Nome', { value: st.nome, placeholder: 'Ex.: Cerveja Amstel — pacote com 12', autofocus: !st.nome, onInput: (v) => { st.nome = v; fn.setError(''); } });
+  // Pacote: contém N unidades de outro produto (que não pode ser, ele mesmo, um pacote)
+  let pac = !!st.contem_id;
+  let contem = st.contem_id ? (store.produtos.get(st.contem_id) || { id: st.contem_id, nome: st.contem_nome || 'Produto' }) : null;
+  let qtd = st.contem_qtd ? String(st.contem_qtd) : '';
+  const contemTxt = h('span', { class: 'pickf-text' });
+  const contemIco = h('span', { class: 'pickf-ico' });
+  const drawContem = () => { contemTxt.textContent = contem ? contem.nome : 'Escolher a unidade'; contemTxt.classList.toggle('is-ph', !contem); contemIco.replaceChildren(icon('tag')); };
+  const contemBtn = h('button', { class: 'input input--pick', type: 'button', 'aria-haspopup': 'dialog', onclick: async () => {
+    const p = await buscarProduto({ title: 'O pacote contém', filtro: (x) => !x.contem_id && (!edit || x.id !== edit.id) });
+    if (p) { contem = p; drawContem(); contemF.setError(''); }
+  } }, contemIco, contemTxt, icon('chevD', 'pickf-chev'));
+  drawContem();
+  const contemF = field('Contém', contemBtn);
+  const qtdF = textField('Quantidade', { value: qtd, inputmode: 'numeric', placeholder: 'Ex.: 12', maxlength: 3, onInput: (v) => { qtd = v.replace(/\D/g, ''); qtdF.input.value = qtd; qtdF.setError(''); } });
+  const pacBox = h('div', { class: 'grid-2 pac-box', hidden: !pac }, contemF, qtdF);
+  const tamF = textField('Tamanho da embalagem', { value: st.tam_embalagem && !pac ? String(st.tam_embalagem).replace('.', ',') : '', placeholder: 'Ex.: 500', inputmode: 'decimal', tipText: 'Só o número, na unidade escolhida ao lado (ex.: 500 com Grama = 500 g). Deixe em branco se o produto é vendido por unidade.', onInput: (v) => { st.tam_embalagem = v.replace(/[^\d.,]/g, ''); } });
+  const unF = pickField('Unidade', { value: st.unidade, items: UNID, onChange: (v) => { st.unidade = v; } });
+  const setPac = (v) => {
+    pac = v; pacBox.hidden = !v; tamF.input.disabled = v;
+    if (v) { st.unidade = 'UN'; unF.set('UN'); st.tam_embalagem = ''; tamF.input.value = ''; }
+  };
+  const pacT = toggle('É um pacote?', { checked: pac, onChange: setPac });
+  tamF.input.disabled = pac;
+  const campoDoErro = (m) => (/quantidade/i.test(m) ? qtdF : /pacote|cont[eé]m|unidade|ele mesmo/i.test(m) ? contemF : /nome/i.test(m) ? fn : null);
   const b = btn(edit ? 'Salvar' : 'Cadastrar produto', { size: 'lg', full: true });
   b.onclick = async () => {
-    if (!st.nome.trim()) { fn.setError('Dê um nome'); return; }
+    let bad = false;
+    if (!st.nome.trim()) { fn.setError('Dê um nome'); bad = true; }
+    if (pac && !contem) { contemF.setError('Escolha a unidade que vem no pacote'); bad = true; }
+    if (pac && !(Number(qtd) >= 2)) { qtdF.setError('A partir de 2'); bad = true; }
+    if (bad) return;
     b.disabled = true; b.setAttribute('aria-busy', 'true'); err.show('');
     try {
       const p = { nome: st.nome.trim(), marca: st.marca || undefined, unidade: st.unidade, tam_embalagem: st.tam_embalagem === '' || st.tam_embalagem == null ? undefined : st.tam_embalagem, categoria_id: st.categoria_id || undefined };
+      if (pac) Object.assign(p, { contem_id: contem.id, contem_qtd: Number(qtd) });
+      else if (edit && edit.contem_id) p.contem_id = '';
       if (edit) Object.assign(p, { id: edit.id, versao: edit.versao }); else if (st.gtin) p.gtin = st.gtin;
       const r = await call('produtos.salvar', p, { rid });
       store.produtos.set(r.id, r);
       await s.close(); toast(edit ? 'Produto atualizado.' : 'Produto cadastrado.', { tone: 'success' }); emit('dados'); onSaved && onSaved(r);
-    } catch (e) { err.show(e.message); } finally { b.disabled = false; b.removeAttribute('aria-busy'); }
+    } catch (e) {
+      const f = campoDoErro(e.message);
+      if (f) f.setError(e.message); else err.show(e.message);
+    } finally { b.disabled = false; b.removeAttribute('aria-busy'); }
   };
   const s = openSheet({ title: edit ? 'Editar produto' : 'Novo produto', size: 'full', footer: b, content: [
     fromCatalog ? h('div', { class: 'warn-item' }, icon('verified'), h('span', {}, 'Encontrado no catálogo colaborativo. Confira e salve.')) : null,
-    err, fn,
-    h('div', { class: 'grid-2' }, textField('Marca', { value: st.marca || '', onInput: (v) => { st.marca = v; } }), textField('Tamanho da embalagem', { value: st.tam_embalagem ? String(st.tam_embalagem).replace('.', ',') : '', placeholder: 'Ex.: 500', inputmode: 'decimal', tipText: 'Só o número, na unidade escolhida ao lado (ex.: 500 com Grama = 500 g). Deixe em branco se o produto é vendido por unidade.', onInput: (v) => { st.tam_embalagem = v.replace(/[^\d.,]/g, ''); } })),
-    h('div', { class: 'grid-2' }, pickField('Unidade', { value: st.unidade, items: UNID, onChange: (v) => { st.unidade = v; } }), pickField('Categoria', { value: st.categoria_id, items: () => categoriaItems('DESPESA'), placeholder: 'Opcional', onChange: (v) => { st.categoria_id = v; } })),
+    err, fn, pacT, pacBox,
+    h('div', { class: 'grid-2' }, textField('Marca', { value: st.marca || '', onInput: (v) => { st.marca = v; } }), tamF),
+    h('div', { class: 'grid-2' }, unF, pickField('Categoria', { value: st.categoria_id, items: () => categoriaItems('DESPESA'), placeholder: 'Opcional', onChange: (v) => { st.categoria_id = v; } })),
     edit && edit.gtin ? h('div', { class: 'form-readonly' }, h('div', { class: 'kv' }, h('span', { class: 'kv-k' }, 'Código de barras'), h('span', { class: 'kv-v num' }, edit.gtin))) :
       h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Código de barras'), h('div', { class: 'scan-manual' }, h('input', { class: 'input num', inputmode: 'numeric', value: st.gtin || '', placeholder: 'Opcional', 'aria-label': 'Código de barras', oninput: (e) => { st.gtin = e.target.value.replace(/\D/g, ''); } }),
         btn('', { kind: 'secondary', icon: 'barcode', aria: 'Ler código', onClick: async () => { const c = await scanCode(); if (c) { st.gtin = c; s.el.querySelector('input[aria-label="Código de barras"]').value = c; } } }))),

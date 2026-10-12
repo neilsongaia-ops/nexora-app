@@ -504,3 +504,27 @@ a.tile:active { transform: var(--press); }
 .input[readonly] { background: var(--surface-2); color: var(--ink-2); cursor: default; }
 .scan-stage.is-square { aspect-ratio: 1; width: 100%; max-width: 420px; margin-inline: auto; }
 .scan-video.is-mirror { transform: scaleX(-1); }
+
+/* Fase 8: lista = compra, pacotes e preços opcionais */
+.row-hint { font-size: var(--t-xs); color: var(--in); font-weight: var(--w-s); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row.is-new, .sess-item.is-new { animation: row-new 1.8s var(--ease-out); }
+@keyframes row-new { 0%, 35% { background-color: var(--brand-soft); } }
+.pack-sug { display: grid; grid-template-columns: var(--thumb) minmax(0, 1fr) auto; align-items: center; gap: var(--s1) var(--s3); padding: var(--s2) var(--s4); background: var(--in-soft); box-shadow: inset 0 var(--bw) 0 var(--line); }
+.pack-sug + .row, .pack-sug + .swipe { box-shadow: inset 0 var(--bw) 0 var(--line); }
+.pack-sug > .ico { justify-self: center; color: var(--in); }
+.pack-sug.is-flash { animation: row-new 1.8s var(--ease-out); }
+.pack-txt { display: flex; flex-direction: column; min-width: 0; }
+.pack-t { font-weight: var(--w-s); font-size: var(--t-sm); color: var(--ink); text-wrap: pretty; }
+.pack-s { font-size: var(--t-xs); color: var(--in); font-weight: var(--w-s); }
+.pack-acts { display: flex; gap: var(--s1); }
+.eco-line { display: flex; align-items: center; gap: var(--s2); flex-basis: 100%; min-height: var(--tap); padding: 0; color: var(--in); font-weight: var(--w-s); font-size: var(--t-sm); text-align: left; }
+.eco-line .ico:last-child { margin-left: auto; }
+.price-chips .chip { font-variant-numeric: tabular-nums; }
+.price-hint { font-size: var(--t-sm); color: var(--in); font-weight: var(--w-s); }
+.pac-box[hidden], .price-chips[hidden] { display: none; }
+.suggest .row-trail { flex-direction: column; }
+@media (max-width: 420px) {
+  .pack-sug { grid-template-columns: minmax(0, 1fr); }
+  .pack-sug > .ico { display: none; }
+  .pack-acts { justify-content: flex-end; }
+}
