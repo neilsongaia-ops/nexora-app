@@ -15,7 +15,7 @@ const PUBLIC = new Set(['auth.pedir', 'auth.confirmar']);
 export const READS = new Set(['bootstrap', 'ws.listar', 'membros.listar', 'recursos.listar', 'categorias.listar',
   'lancamentos.listar', 'lancamentos.detalhe', 'lancamentos.historico', 'cartoes.situacao', 'faturas.listar', 'faturas.detalhe',
   'recorrencias.listar', 'planejamentos.listar', 'planejamentos.situacao', 'relatorios.painel', 'relatorios.saldos',
-  'relatorios.resultado', 'relatorios.fluxo', 'relatorios.serie', 'integridade.verificar', 'produtos.listar', 'produtos.porGtin',
+  'relatorios.resultado', 'relatorios.fluxo', 'relatorios.serie', 'integridade.verificar', 'produtos.listar', 'produtos.indice', 'produtos.porGtin',
   'produtos.imagens', 'lojas.listar', 'lojas.proximas', 'precos.compartilhados', 'precos.historico', 'precos.evolucao', 'precos.opcoes',
   'alertas.precos', 'reputacao.minha', 'config.ler', 'listas.listar', 'listas.detalhe', 'sessoes.listar', 'sessoes.detalhe',
   'comparacao.lista', 'nfce.interpretar', 'admin.painel', 'admin.catalogo', 'admin.denuncias', 'exportar.espaco', 'ws.resumo', 'ws.arquivados',
@@ -23,7 +23,8 @@ export const READS = new Set(['bootstrap', 'ws.listar', 'membros.listar', 'recur
   'historico.listar', 'historico.serie', 'deslocamento.ler', 'perfil.ler']);
 // Leituras que nunca entram em cache (memória ou aparelho) e não recebem _rid: o CPF completo só existe enquanto está na tela
 const READ_NC = new Set(['perfil.cpf']);
-const NO_OFFLINE = new Set(['ws.resumo', 'ws.arquivados', 'produtos.imagens', 'exportar.espaco', 'nfce.interpretar', 'integridade.verificar',
+// produtos.indice guarda a própria cópia (js/indice.js); cada "desde" é uma chave nova e encheria o aparelho
+const NO_OFFLINE = new Set(['produtos.indice', 'ws.resumo', 'ws.arquivados', 'produtos.imagens', 'exportar.espaco', 'nfce.interpretar', 'integridade.verificar',
   'notificacoes.listar', 'notificacoes.contar', 'notificacoes.preferencias_salvar', 'convites.recebidos', 'convites.enviados', 'perfil.cpf']);
 // confirmar preço e denunciar exigem só "leitura", mas são escritas (não usar cache)
 export const isWrite = (a) => !READS.has(a) && !PUBLIC.has(a) && !READ_NC.has(a);

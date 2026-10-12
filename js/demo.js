@@ -645,6 +645,14 @@ function precoEm(S, pid, lid) {
   return null;
 }
 const ultimoPago = (S, pid) => S.precos.filter((x) => x.produto_id === pid).sort((a, b) => (a.data < b.data ? 1 : -1))[0] || null;
+// produtos.indice (demo): carimba "atualizado" quando a visão do produto muda (nome, preço, imagem, status…)
+const IDX = new Map();
+function idxMarcar(S) {
+  const m = IDX.get(S.id) || { sig: {}, at: {} }, t = new Date().toISOString();
+  IDX.set(S.id, m);
+  for (const p of S.produtos) { const s = JSON.stringify(viewProd(S, p)); if (m.sig[p.id] !== s) { m.sig[p.id] = s; m.at[p.id] = t; } }
+  return m.at;
+}
 const viewProd = (S, p) => { const { _base, ...v } = p; const u = ultimoPago(S, p.id), c = p.contem_id && prodOf(S, p.contem_id); return { ...v, contem_id: c ? c.id : null, contem_qtd: c ? p.contem_qtd : null, contem_nome: c ? c.nome : null, preco_unidade: c && u ? r2(u.preco / p.contem_qtd) : null, pacotes: S.produtos.filter((x) => x.contem_id === p.id && x.status !== 'INATIVO').map((x) => ({ id: x.id, nome: x.nome, contem_qtd: x.contem_qtd })), tem_imagem: !!DB.imagens[p.id] || !!(p.gtin && DB.imagens['g:' + p.gtin]), ultimo_preco: u ? u.preco : null, ultimo_preco_data: u ? u.data : null }; };
 const hav = (a, b, c, d) => { const R = 6371, t = (x) => x * Math.PI / 180; const x = Math.sin(t(c - a) / 2) ** 2 + Math.cos(t(a)) * Math.cos(t(c)) * Math.sin(t(d - b) / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(x)); };
 function listaView(S, li) {
@@ -1208,6 +1216,12 @@ const R = {
     const f = S.produtos.filter((p) => (todos || p.status !== 'INATIVO') && (!ws.length || ((hay) => ws.every((w) => hay.includes(w)))(norm(p.nome + ' ' + (p.marca || '') + ' ' + (p.gtin || ''))))).sort((a, b) => a.nome.localeCompare(b.nome));
     return { total: f.length, itens: f.slice(offset, offset + limite).map((p) => viewProd(S, p)) };
   },
+  // Índice para busca no aparelho. Sem "desde": todos os ativos. Com "desde": o que mudou (inclui INATIVO); reenviar o último é inofensivo.
+  'produtos.indice': ({ desde }, { S }) => {
+    const at = idxMarcar(S), ate = new Date().toISOString();
+    if (!desde) return { itens: S.produtos.filter((p) => p.status !== 'INATIVO').sort((a, b) => a.nome.localeCompare(b.nome)).map((p) => viewProd(S, p)), ate, completo: true };
+    return { itens: S.produtos.filter((p) => (at[p.id] || '') >= desde).map((p) => viewProd(S, p)), ate, completo: false };
+  },
   'produtos.salvar': (p, { S }) => {
     if (p.id) {
       const x = prodOf(S, p.id) || fail('Produto não encontrado.'); checkVer(x, p.versao);
@@ -1662,7 +1676,7 @@ function histView(S, x) {
 export async function handle(action, p) {
   if (!DB) seed();
   const [a, b] = flags.lento ? [1000, 3000] : (window.NEXORA_CONFIG || {}).latenciaDemo || [300, 1100];
-  const write = !/listar|detalhe|historico|situacao|relatorios|bootstrap|porGtin|imagens|proximas|compartilhados|evolucao|alertas|minha|ler|interpretar|painel|catalogo|contar|recebidos|enviados|preferencias$|denuncias$|cpf$|opcoes$/.test(action);
+  const write = !/listar|detalhe|historico|situacao|relatorios|bootstrap|porGtin|imagens|proximas|compartilhados|evolucao|alertas|minha|ler|interpretar|painel|catalogo|contar|recebidos|enviados|preferencias$|denuncias$|cpf$|opcoes$|indice$/.test(action);
   await sleep(a + Math.random() * (b - a) * (write ? 1.6 : 1) + (flags.lento && write ? 2000 : 0));
   if (flags.offline || !navigator.onLine) throw new TypeError('offline');
   if (flags.falhar) { flags.falhar = false; sset(FK, flags); throw new TypeError('falha simulada'); }

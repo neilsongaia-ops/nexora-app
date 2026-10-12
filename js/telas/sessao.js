@@ -6,8 +6,9 @@ import { call, invalidate } from '../api.js';
 import { store, can, recursosAtivos } from '../store.js';
 import { openSheet, openMenu, confirmSheet } from '../ui/sheet.js';
 import { toast, successBurst } from '../ui/toast.js';
-import { badge, empty, errorState, skelRows, btn, iconBtn, moneyField, stepper, pickField, dateField, textField, formError, countUp, thumb, kv, chip } from '../ui/components.js';
-import { lerProduto, talvezUnir } from './compras.js';
+import { badge, empty, errorState, skelRows, btn, iconBtn, moneyField, stepper, pickField, dateField, textField, formError, countUp, thumb, kv, chip, row } from '../ui/components.js';
+import { lerProduto, talvezUnir, prodSub } from './compras.js';
+import { garantir, indicePronto, buscarLocal } from '../indice.js';
 import { recursoItems, categoriaItems } from './lancForm.js';
 
 const sincronizadas = new Set();   // sessoes.sincronizar: uma vez por compra aberta nesta execução do app
@@ -28,6 +29,7 @@ export default async function sessao(ctx, id) {
   const sbar = h('div', { class: 'sess-bar' }, h('div', { class: 'sess-total' }, h('span', { class: 'sess-total-k' }, 'No carrinho'), totalV), ed ? iconBtn('plus', 'Adicionar item', () => addItem()) : null, ed ? concluirBtn : null);
   view.append(h('div', { class: 'sess-top' }, prog, bar), listEl, cartEl, sbar);
   setTitle('Compra', { back: '/compras' });
+  if (ed) garantir();
   let lastTotal = 0;
   const total = () => r2(s.itens.filter((i) => i.marcado).reduce((t, i) => t + (i.preco_unitario || 0) * i.quantidade, 0));
 
@@ -148,16 +150,26 @@ export default async function sessao(ctx, id) {
     }
     let desc = prod ? prod.nome : '', preco = 0, q = 1;
     const err = formError(), rid = uuid();
-    const f = prod ? null : textField('Item', { placeholder: 'Ex.: Pão francês', autofocus: true, onInput: (v) => { desc = v; } });
+    // Produtos do índice local que casam com o texto (sem rede); tocar abre o mesmo fluxo do produto
+    const sugList = h('div', { class: 'sug-list' });
+    const sugs = prod ? null : h('div', { class: 'sug-panel is-inline', role: 'region', 'aria-label': 'Produtos encontrados', hidden: true }, h('div', { class: 'sug-head' }, h('span', { class: 'sug-label' }, 'Produtos encontrados')), sugList);
+    const sugerir = (t) => {
+      if (!t || !indicePronto()) { sugs.hidden = true; return; }
+      const its = buscarLocal(t, { limite: 5 }).itens;
+      sugList.replaceChildren(...its.map((p) => row({ cls: 'sug-row', lead: thumb(p), title: p.nome, sub: prodSub(p) || null, trail: p.ultimo_preco ? h('span', { class: 'num' }, money(p.ultimo_preco)) : null, onClick: async () => { await sh.close(); addItem(p); } })));
+      sugs.hidden = !its.length;
+    };
+    const f = prod ? null : textField('Item', { placeholder: 'Ex.: Pão francês', autofocus: true, onInput: (v) => { desc = v; sugerir(v.trim()); } });
     const mf = moneyField('Preço', { value: 0, onChange: (v) => { preco = v; } });
     const b = btn('Adicionar ao carrinho', { size: 'lg', full: true, icon: 'cart' });
     b.onclick = async () => {
+      if (f) desc = f.input.value;   // o texto que está na caixa agora
       if (!desc.trim()) { f && f.setError('Informe o item'); return; }
       b.disabled = true; b.setAttribute('aria-busy', 'true');
       try { await adicionar({ prod, desc: desc.trim(), q, preco, rid, fechar: () => sh.close() }); }
       catch (e) { err.show(e.message); } finally { b.disabled = false; b.removeAttribute('aria-busy'); }
     };
-    const sh = openSheet({ title: prod ? prod.nome : 'Adicionar item', footer: b, content: [err, f, h('div', { class: 'grid-2' }, mf, h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Quantidade'), stepper({ value: 1, min: 1, max: 99, onChange: (v) => { q = v; } }))),
+    const sh = openSheet({ title: prod ? prod.nome : 'Adicionar item', footer: b, content: [err, f, sugs, h('div', { class: 'grid-2' }, mf, h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Quantidade'), stepper({ value: 1, min: 1, max: 99, onChange: (v) => { q = v; } }))),
       prod ? null : btn('Ler código de barras', { kind: 'ghost', icon: 'barcode', onClick: async () => { await sh.close(); ler(); } })] });
   }
   async function adicionar({ prod, desc, q, preco, rid, antes, fechar }) {

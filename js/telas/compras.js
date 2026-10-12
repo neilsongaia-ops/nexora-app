@@ -11,6 +11,7 @@ import { scanCode, geolocate } from '../ui/media.js';
 import { escolherNoMapa, coordTxt } from '../ui/mapa.js';
 import { segmented, card, row, badge, empty, errorState, skelRows, skelCards, btn, iconBtn, searchBox, thumb, textField, pickField, formError, chip, sectionHead, field, toggle } from '../ui/components.js';
 import { categoriaItems } from './lancForm.js';
+import { garantir, indicePronto, buscarLocal, onIndice, aplicarLocal } from '../indice.js';
 
 export default async function compras(ctx) {
   const [sub, id] = ctx.params;
@@ -66,10 +67,12 @@ function produtos(ctx, body) {
   let texto = '';
   const list = h('div', { class: 'list' });
   const search = searchBox({ placeholder: 'Buscar produto ou código', onSearch: (v) => { texto = v; reload(); } });
+  const velho = (v) => { list.classList.toggle('is-stale', v); list.inert = v; };
+  search.input.addEventListener('input', () => velho(search.input.value.trim() !== texto));
   body.append(h('div', { class: 'toolbar' }, h('div', { class: 'grow' }, search), btn('', { kind: 'secondary', icon: 'barcode', aria: 'Ler código de barras', onClick: () => lerProduto(ctx) })), list);
   let inf;
   const reload = () => {
-    inf && inf.stop(); list.replaceChildren();
+    inf && inf.stop(); list.replaceChildren(); velho(false);
     inf = infinite({ container: list, skeleton: () => skelRows(4), limite: 40,
       load: (offset, limite) => call('produtos.listar', { texto: texto || undefined, offset, limite }),
       render: (its) => its.forEach((p) => {
@@ -82,7 +85,7 @@ function produtos(ctx, body) {
         ] }));
         list.append(swipeable(r, { right: { label: 'Na lista', icon: 'bag', tone: 'xfer', run: () => addLista(p) } }));
       }),
-      onEmpty: () => list.replaceChildren(empty({ ic: 'tag', title: texto ? 'Nenhum produto encontrado' : 'Nenhum produto ainda', action: can('editor') ? btn(texto ? 'Cadastrar “' + texto + '”' : 'Cadastrar produto', { kind: 'secondary', icon: 'plus', onClick: () => produtoForm({ initial: { nome: texto }, onSaved: (p) => ctx.go('/compras/produto/' + p.id) }) }) : null })),
+      onEmpty: () => list.replaceChildren(empty({ ic: 'tag', title: texto ? 'Nenhum produto encontrado' : 'Nenhum produto ainda', action: can('editor') ? btn(texto ? 'Cadastrar “' + texto + '”' : 'Cadastrar produto', { kind: 'secondary', icon: 'plus', onClick: () => { const t = search.input.value.trim(); produtoForm({ initial: { nome: t }, conferirNome: !!t, onSaved: (p) => ctx.go('/compras/produto/' + p.id) }); } }) : null })),
       onError: (e, retry) => list.append(errorState(e.message, retry)) });
   };
   ctx.onCleanup(() => inf && inf.stop());
@@ -98,23 +101,36 @@ export function prodRow(p, onClick, trail) {
 
 // Busca de produto em sheet (texto ou código). filtro: quais produtos servem (ex.: só unidades, nunca ele mesmo)
 export function buscarProduto({ title = 'Escolher produto', texto = '', filtro } = {}) {
+  garantir();
   return new Promise((res) => {
-    let chosen = null, seq = 0;
+    let chosen = null, seq = 0, mostrado = null, local = false;
     const list = h('div', { class: 'pick-list', role: 'listbox', 'aria-label': title }, skelRows(4));
+    const busy = h('span', { class: 'sug-busy', hidden: true, 'aria-hidden': 'true' });
+    const atual = () => input.value.trim();
     const escolher = (p) => { chosen = p; haptic(6); s.close(); };
-    const draw = (its) => list.replaceChildren(...(its.length ? its.map((p) => h('button', { class: 'pick-item', type: 'button', role: 'option', onclick: () => escolher(p) },
+    const velho = (v) => { list.classList.toggle('is-stale', v); list.inert = v; busy.hidden = !v; };
+    const draw = (t, its) => { mostrado = t; velho(false); list.replaceChildren(...(its.length ? its.map((p) => h('button', { class: 'pick-item', type: 'button', role: 'option', onclick: () => escolher(p) },
       thumb(p), h('span', { class: 'pick-text' }, h('span', { class: 'pick-label' }, p.nome), prodSub(p) ? h('span', { class: 'pick-sub' }, prodSub(p)) : null),
-      p.ultimo_preco ? h('span', { class: 'pick-right num' }, money(p.ultimo_preco)) : null)) : [h('p', { class: 'pick-empty' }, 'Nada encontrado')]));
-    const find = debounce(async (t) => {
+      p.ultimo_preco ? h('span', { class: 'pick-right num' }, money(p.ultimo_preco)) : null)) : [h('p', { class: 'pick-empty' }, 'Nada encontrado')])); };
+    const rede = debounce(async (t) => {
+      if (indicePronto()) return;
       const my = ++seq;
       try {
         const r = await load('produtos.listar', { texto: t || undefined, limite: 20 });
-        if (my !== seq) return;
+        if (my !== seq || t !== atual()) return;
         r.itens.forEach((p) => store.produtos.set(p.id, p));
-        draw(r.itens.filter((p) => !filtro || filtro(p)));
-      } catch (e) { if (my === seq) list.replaceChildren(errorState(e.message, () => find(input.value.trim()))); }
+        draw(t, r.itens.filter((p) => !filtro || filtro(p)));
+      } catch (e) { if (my === seq && t === atual()) { mostrado = t; velho(false); list.replaceChildren(errorState(e.message, find)); } }
     }, 250);
-    const input = h('input', { type: 'search', placeholder: 'Buscar produto', 'aria-label': 'Buscar produto', value: texto, autofocus: true, enterkeyhint: 'search', oninput: (e) => find(e.target.value.trim()) });
+    // Com índice: filtra no aparelho a cada tecla. Sem índice: servidor, com o resultado velho esmaecido até chegar o novo
+    const find = () => {
+      const t = atual();
+      local = indicePronto();
+      if (local) { seq++; draw(t, buscarLocal(t, { limite: 20, filtro }).itens); return; }
+      if (mostrado !== null && mostrado !== t) velho(true);
+      rede(t);
+    };
+    const input = h('input', { type: 'search', placeholder: 'Buscar produto', 'aria-label': 'Buscar produto', value: texto, autofocus: true, enterkeyhint: 'search', oninput: find });
     input.dataset.forceFocus = '1';
     const ler = async () => {
       const c = await scanCode({ title: 'Ler código de barras' });
@@ -127,8 +143,9 @@ export function buscarProduto({ title = 'Escolher produto', texto = '', filtro }
         escolher(r.produto);
       } catch (e) { toast(e.message, { tone: 'danger' }); }
     };
-    const s = openSheet({ title, size: 'tall', content: [h('div', { class: 'toolbar' }, h('label', { class: 'search grow' }, icon('search'), input), btn('', { kind: 'secondary', icon: 'barcode', aria: 'Ler código de barras', onClick: ler })), list], onClose: () => res(chosen) });
-    find(texto.trim());
+    const off = onIndice(() => { if (!local) find(); });
+    const s = openSheet({ title, size: 'tall', content: [h('div', { class: 'toolbar' }, h('label', { class: 'search grow' }, icon('search'), input), btn('', { kind: 'secondary', icon: 'barcode', aria: 'Ler código de barras', onClick: ler })), busy, list], onClose: () => { off(); res(chosen); } });
+    find();
   });
 }
 
@@ -182,10 +199,11 @@ export async function lerProduto(ctx, { onProduct } = {}) {
 }
 
 const UNID = ['UN', 'KG', 'G', 'L', 'ML'].map((u) => ({ value: u, label: { UN: 'Unidade', KG: 'Quilo (kg)', G: 'Grama (g)', L: 'Litro (L)', ML: 'Mililitro (ml)' }[u] }));
-export function produtoForm({ edit, initial = {}, fromCatalog, onSaved } = {}) {
+export function produtoForm({ edit, initial = {}, fromCatalog, conferirNome, onSaved } = {}) {
   const st = { nome: '', marca: '', gtin: '', unidade: 'UN', tam_embalagem: '', categoria_id: null, contem_id: null, contem_qtd: null, ...(edit || initial) };
   const err = formError(), rid = uuid();
-  const fn = textField('Nome', { value: st.nome, placeholder: 'Ex.: Cerveja Amstel — pacote com 12', autofocus: !st.nome, onInput: (v) => { st.nome = v; fn.setError(''); } });
+  const fn = textField('Nome', { value: st.nome, placeholder: 'Ex.: Cerveja Amstel — pacote com 12', autofocus: !st.nome || !!conferirNome, onInput: (v) => { st.nome = v; fn.setError(''); } });
+  if (conferirNome) { fn.classList.add('field--check'); fn.input.dataset.forceFocus = '1'; }
   // Pacote: contém N unidades de outro produto (que não pode ser, ele mesmo, um pacote)
   let pac = !!st.contem_id;
   let contem = st.contem_id ? (store.produtos.get(st.contem_id) || { id: st.contem_id, nome: st.contem_nome || 'Produto' }) : null;
@@ -224,7 +242,7 @@ export function produtoForm({ edit, initial = {}, fromCatalog, onSaved } = {}) {
       else if (edit && edit.contem_id) p.contem_id = '';
       if (edit) Object.assign(p, { id: edit.id, versao: edit.versao }); else if (st.gtin) p.gtin = st.gtin;
       const r = await call('produtos.salvar', p, { rid });
-      store.produtos.set(r.id, r);
+      store.produtos.set(r.id, r); aplicarLocal(r);
       await s.close(); toast(edit ? 'Produto atualizado.' : 'Produto cadastrado.', { tone: 'success' }); emit('dados'); onSaved && onSaved(r);
     } catch (e) {
       const f = campoDoErro(e.message);
@@ -233,13 +251,14 @@ export function produtoForm({ edit, initial = {}, fromCatalog, onSaved } = {}) {
   };
   const s = openSheet({ title: edit ? 'Editar produto' : 'Novo produto', size: 'full', footer: b, content: [
     fromCatalog ? h('div', { class: 'warn-item' }, icon('verified'), h('span', {}, 'Encontrado no catálogo colaborativo. Confira e salve.')) : null,
-    err, fn, pacT, pacBox,
+    err, fn, conferirNome ? h('p', { class: 'name-check' }, icon('edit'), h('span', {}, 'Veio do que você digitou. Confira o nome antes de cadastrar.')) : null, pacT, pacBox,
     h('div', { class: 'grid-2' }, textField('Marca', { value: st.marca || '', onInput: (v) => { st.marca = v; } }), tamF),
     h('div', { class: 'grid-2' }, unF, pickField('Categoria', { value: st.categoria_id, items: () => categoriaItems('DESPESA'), placeholder: 'Opcional', onChange: (v) => { st.categoria_id = v; } })),
     edit && edit.gtin ? h('div', { class: 'form-readonly' }, h('div', { class: 'kv' }, h('span', { class: 'kv-k' }, 'Código de barras'), h('span', { class: 'kv-v num' }, edit.gtin))) :
       h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Código de barras'), h('div', { class: 'scan-manual' }, h('input', { class: 'input num', inputmode: 'numeric', value: st.gtin || '', placeholder: 'Opcional', 'aria-label': 'Código de barras', oninput: (e) => { st.gtin = e.target.value.replace(/\D/g, ''); } }),
         btn('', { kind: 'secondary', icon: 'barcode', aria: 'Ler código', onClick: async () => { const c = await scanCode(); if (c) { st.gtin = c; s.el.querySelector('input[aria-label="Código de barras"]').value = c; } } }))),
   ] });
+  if (conferirNome) setTimeout(() => { fn.input.focus({ preventScroll: true }); fn.input.select(); }, 360);   // depois da animação da sheet
 }
 
 async function lojas(ctx, body) {

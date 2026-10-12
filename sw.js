@@ -1,9 +1,9 @@
 // Service worker simples: abre o shell offline. Dados sempre vêm da API (POST, não cacheado).
 // Outros domínios (mapa do OpenStreetMap, Leaflet no unpkg, busca Nominatim, fontes, CDNs) passam direto pela rede, sem cache.
-const V = 'nexora-shell-v28';
+const V = 'nexora-shell-v29';
 const SHELL = ['./', './index.html', './config.js', './manifest.webmanifest', './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png',
   './css/tokens.css', './css/base.css', './css/components.css', './css/telas.css',
-  './js/app.js', './js/api.js', './js/util.js', './js/icons.js', './js/store.js', './js/tema.js', './js/demo.js',
+  './js/app.js', './js/api.js', './js/util.js', './js/icons.js', './js/store.js', './js/indice.js', './js/tema.js', './js/demo.js',
   './js/ui/sheet.js', './js/ui/components.js', './js/ui/toast.js', './js/ui/notificacoes.js', './js/ui/gestures.js', './js/ui/charts.js', './js/ui/media.js', './js/ui/conta.js', './js/ui/historico.js', './js/ui/mapa.js', './js/ui/avatar.js',
   './js/telas/login.js', './js/telas/inicio.js', './js/telas/lancamentos.js', './js/telas/lancForm.js', './js/telas/lancAcoes.js',
   './js/telas/contas.js', './js/telas/agenda.js', './js/telas/planejamentos.js', './js/telas/compras.js', './js/telas/lista.js',

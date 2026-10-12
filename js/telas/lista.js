@@ -1,4 +1,5 @@
 // Lista de compras: itens, quantidade, estimativa por loja (preços opcionais e sugestão de pacote), adicionar por busca/código, comparar, ir às compras
+// A busca da barra "Adicionar item" usa o índice local de produtos (js/indice.js); sem índice, cai em produtos.listar.
 import { h, money, uuid, emit, debounce, num, embalagem, haptic } from '../util.js';
 import { icon } from '../icons.js';
 import { call, load } from '../api.js';
@@ -9,6 +10,7 @@ import { swipeable } from '../ui/gestures.js';
 import { row, thumb, badge, empty, errorState, skelRows, btn, iconBtn, stepper, pickField, formError, sectionHead, chip } from '../ui/components.js';
 import { lerProduto, lojaForm, pacoteTxt, buscarProduto, talvezUnir } from './compras.js';
 import { recursoItems } from './lancForm.js';
+import { garantir, indicePronto, buscarLocal, onIndice } from '../indice.js';
 
 const isPeso = (u) => u === 'KG' || u === 'L';
 const fmtQ = (q, u) => (isPeso(u) ? num(q, 3) + ' ' + u.toLowerCase() : num(q, 2) + '×');
@@ -137,43 +139,92 @@ export default async function lista(ctx, id) {
     if (!(await confirmSheet({ title: 'Arquivar “' + d.nome + '”?', content: aberta ? h('p', { class: 'muted' }, 'A compra em andamento desta lista será encerrada.') : null, confirm: 'Arquivar', tone: 'danger' }))) return;
     try { await call('listas.arquivar', { id }, { rid: uuid() }); toast('Lista arquivada.', { tone: 'success' }); go('/compras'); } catch (e) { toast(e.message, { tone: 'danger' }); }
   }
+  // Barra "Adicionar item": nunca age sobre texto velho. A linha "Adicionar" e o Enter leem a caixa NO MOMENTO do toque;
+  // produtos de um texto anterior ficam esmaecidos e sem clique até chegar a resposta do texto atual.
   function addItemBar() {
-    const input = h('input', { type: 'search', placeholder: 'Adicionar item', 'aria-label': 'Adicionar item', enterkeyhint: 'done', autocomplete: 'off' });
-    const sug = h('div', { class: 'list suggest', hidden: true, role: 'listbox', 'aria-label': 'Sugestões' });
-    let seq = 0;
+    garantir();
+    const input = h('input', { type: 'search', placeholder: 'Adicionar item', 'aria-label': 'Adicionar item', enterkeyhint: 'done', autocomplete: 'off', 'aria-expanded': 'false' });
+    const atual = () => input.value.trim();
+    const busy = h('span', { class: 'sug-busy', hidden: true, 'aria-hidden': 'true' });
+    const status = h('span', { class: 'sug-status', 'aria-live': 'polite' });
+    const head = h('div', { class: 'sug-head' }, h('span', { class: 'sug-label' }, 'Produtos encontrados'), status);
+    const prods = h('div', { class: 'sug-list', role: 'group', 'aria-label': 'Produtos encontrados' });
+    const act = row({ cls: 'sug-act', lead: h('span', { class: 'tipo-ico sug-act-ico' }, icon('plus')), title: '', sub: 'Item sem produto: sem preço e sem comparação', onClick: () => addTexto() });
+    const actT = act.querySelector('.row-title');
+    const panel = h('div', { class: 'sug-panel', role: 'region', 'aria-label': 'Sugestões para adicionar', hidden: true }, busy, head, prods, act);
+    let seq = 0, mostrado = null, local = false;   // mostrado: texto a que pertencem os produtos exibidos
+    const abrir = () => { panel.hidden = false; input.setAttribute('aria-expanded', 'true'); };
+    const fechar = () => { panel.hidden = true; input.setAttribute('aria-expanded', 'false'); };
+    const setBusy = (v) => { busy.hidden = !v; status.textContent = v ? 'Buscando…' : ''; };
+    const velho = (v) => { prods.classList.toggle('is-stale', v); prods.inert = v; prods.setAttribute('aria-busy', String(v)); };
+    const mostrar = (t, itens) => {
+      mostrado = t; velho(false); setBusy(false);
+      prods.replaceChildren(...itens.map(sugRow));
+      head.hidden = prods.hidden = !itens.length;
+    };
     const add = async (p, q = 1) => {
-      seq++; input.value = ''; sug.hidden = true; input.focus({ preventScroll: true });
+      seq++; input.value = ''; mostrado = null; fechar(); input.focus({ preventScroll: true });
       try {
         const r = await call('listas.item.adicionar', p.id ? { lista_id: id, produto_id: p.id, quantidade: q } : { lista_id: id, descricao: p.descricao, quantidade: q }, { rid: uuid() });
         haptic(10);
         novo = r.id;
-        toast(r.ja_existia ? 'Já estava na lista: agora são ' + qTxt(r.quantidade, p.unidade) : 'Adicionado: ' + (p.nome || p.descricao), { tone: 'success', duration: 1800 });
+        if (r.ja_existia) toast('Já estava na lista: agora são ' + qTxt(r.quantidade, p.unidade || r.unidade), { tone: 'success', duration: 1800 });
+        else if (p.id) toast('Adicionado: ' + p.nome, { tone: 'success', duration: 1800 });
+        else toast('Adicionado: ' + p.descricao, { tone: 'success', duration: 4000, action: { label: 'Ligar a um produto', onClick: () => ligar({ id: r.id, descricao: p.descricao }) } });
         await refresh();
         if (p.id && r.parecidos && r.parecidos.length) { if (await talvezUnir(r.parecidos, p)) refresh(); input.focus({ preventScroll: true }); }
       } catch (e) { toast(e.message, { tone: 'danger' }); }
     };
+    // Lê a caixa agora, nunca o texto de quando a linha foi desenhada
+    const addTexto = () => { const t = atual(); if (t) add({ descricao: t }); else fechar(); };
     const sugRow = (p) => {
       let q = 1;
       const peso = isPeso(p.unidade);
       const st = stepper({ value: 1, min: peso ? 0.25 : 1, max: 999, step: peso ? 0.25 : 1, small: true, label: 'Quantidade de ' + p.nome, format: (v) => fmtQ(v, p.unidade), onChange: (v) => { q = v; } });
-      return row({ lead: thumb(p), title: p.nome, sub: [p.marca, pacoteTxt(p) || embalagem(p)].filter(Boolean).join(' · ') || null,
+      return row({ cls: 'sug-row', lead: thumb(p), title: p.nome, sub: [p.marca, pacoteTxt(p) || embalagem(p)].filter(Boolean).join(' · ') || null,
         trail: st, trailSub: p.ultimo_preco ? money(p.ultimo_preco) : null, onClick: () => add(p, q) });
     };
-    const find = debounce(async (t) => {
+    // Sem índice ainda (primeira abertura): busca no servidor, descartando respostas de textos anteriores
+    const rede = debounce(async (t) => {
+      if (indicePronto()) return;
       const my = ++seq;
-      if (!t) { sug.hidden = true; return; }
       try {
         const r = await load('produtos.listar', { texto: t, limite: 8 });
-        if (my !== seq) return;
+        if (my !== seq || t !== atual()) return;
         r.itens.forEach((p) => store.produtos.set(p.id, p));
-        sug.replaceChildren(...r.itens.slice(0, 8).map(sugRow),
-          row({ lead: h('span', { class: 'tipo-ico' }, icon('plus')), title: 'Adicionar “' + t + '”', sub: 'Item sem produto: sem preço e sem comparação', onClick: () => add({ descricao: t }) }));
-        sug.hidden = false;
-      } catch { if (my === seq) sug.hidden = true; }
+        mostrar(t, r.itens.slice(0, 8));
+      } catch { if (my === seq && t === atual()) mostrar(t, []); }
     }, 250);
-    input.addEventListener('input', () => find(input.value.trim()));
-    input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && input.value.trim()) { const first = sug.querySelector('.row'); if (first && !sug.hidden) first.click(); else add({ descricao: input.value.trim() }); } if (e.key === 'Escape') sug.hidden = true; });
-    return h('div', {}, sug, h('div', { class: 'add-bar' }, h('label', { class: 'search' }, icon('plus'), input), iconBtn('barcode', 'Ler código de barras', () => lerProduto(ctx, { onProduct: (p) => add(p) }))));
+    const sugerir = () => {
+      const t = atual();
+      if (!t) { seq++; mostrado = null; fechar(); return; }
+      actT.textContent = 'Adicionar “' + t + '”';
+      act.setAttribute('aria-label', 'Adicionar “' + t + '” como item sem produto');
+      abrir();
+      local = indicePronto();
+      if (local) { seq++; mostrar(t, buscarLocal(t, { limite: 8 }).itens); return; }
+      if (mostrado !== t) { velho(true); setBusy(true); head.hidden = false; }
+      rede(t);
+    };
+    input.addEventListener('input', sugerir);
+    input.addEventListener('focus', () => { if (atual() && panel.hidden) sugerir(); });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const t = atual();
+        if (!t) return;
+        // Só usa o primeiro produto se ele pertence ao texto que está na caixa agora
+        const first = !panel.hidden && mostrado === t && !prods.inert ? prods.querySelector('.row') : null;
+        if (first) first.click(); else addTexto();
+      }
+      if (e.key === 'Escape' && !panel.hidden) { e.preventDefault(); e.stopPropagation(); fechar(); }
+    });
+    const dock = h('div', { class: 'add-dock' }, panel, h('div', { class: 'add-bar' }, h('label', { class: 'search' }, icon('plus'), input), iconBtn('barcode', 'Ler código de barras', () => lerProduto(ctx, { onProduct: (p) => add(p) }))));
+    const fora = (e) => { if (!panel.hidden && !dock.contains(e.target)) fechar(); };
+    document.addEventListener('pointerdown', fora, true);
+    const off = onIndice(() => { if (!local && !panel.hidden) sugerir(); });   // o índice chegou: passa a buscar no aparelho
+    if (ctx.onCleanup) ctx.onCleanup(() => { document.removeEventListener('pointerdown', fora, true); off(); });
+    return dock;
   }
   async function iniciar() {
     if (aberta) { go('/compras/sessao/' + aberta.id); return; }
