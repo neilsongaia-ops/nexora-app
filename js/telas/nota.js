@@ -9,6 +9,20 @@ import { scanCode, pdfText, pickFile } from '../ui/media.js';
 import { card, row, badge, empty, errorState, btn, textField, pickField, stepper, formError, sectionHead, chip, kv, tip } from '../ui/components.js';
 import { recursoItems } from './lancForm.js';
 
+// No app Android (Capacitor) o celular consulta o portal da SEFAZ por um WebView do próprio aparelho: o servidor do Apps Script é bloqueado, o celular não.
+// Sem o app, ou com QR que exige captcha, o fluxo de sempre (colar texto ou enviar PDF) continua valendo.
+const leitorNativo = () => {
+  const C = window.Capacitor;
+  return C && C.isNativePlatform && C.isNativePlatform() && C.isPluginAvailable && C.isPluginAvailable('NfceReader') ? C.registerPlugin('NfceReader') : null;
+};
+const urlApiSefa = (c) => {
+  const m = String(c || '').match(/[?&]p=([^&#\s]+)/i);
+  if (!m) return '';
+  let p = m[1];
+  try { p = decodeURIComponent(p); } catch { p = m[1]; }
+  return p.split('|')[1] === '2' ? 'https://app.sefa.pa.gov.br/consulta-nfce-api/api/extranet/qrcode?p=' + encodeURIComponent(p) : '';
+};
+
 export default async function nota(ctx) {
   const { view, setTitle } = ctx;
   setTitle('Nota fiscal');
@@ -24,13 +38,26 @@ export default async function nota(ctx) {
     const txt = textField('Texto da nota', { value: texto, multiline: true, rows: 6, placeholder: 'Abra a nota no site da Sefaz, selecione tudo, copie e cole aqui', onInput: (v) => { texto = v; drawSrc(); } });
     const src = h('div', { class: 'src-grid' });
     const drawSrc = () => src.replaceChildren(
-      h('button', { class: 'src-btn' + (entrada ? ' is-done' : ''), type: 'button', onclick: async () => { const c = await scanCode({ title: 'Ler QR da nota', formats: ['qr_code'], manualLabel: 'Link ou chave', inputmode: 'text' }); if (c) { entrada = c; ent.input.value = c; drawSrc(); } } }, icon(entrada ? 'check' : 'camera'), 'Ler QR da nota'),
+      h('button', { class: 'src-btn' + (entrada ? ' is-done' : ''), type: 'button', onclick: async () => { const c = await scanCode({ title: 'Ler QR da nota', formats: ['qr_code'], manualLabel: 'Link ou chave', inputmode: 'text' }); if (c) { entrada = c; ent.input.value = c; drawSrc(); lerNoCelular(c); } } }, icon(entrada ? 'check' : 'camera'), 'Ler QR da nota'),
       h('button', { class: 'src-btn' + (pdfNome ? ' is-done' : ''), type: 'button', onclick: async (e) => {
         const f = await pickFile('application/pdf'); if (!f) return;
         const b = e.currentTarget; b.disabled = true;
         try { texto = await pdfText(f); pdfNome = f.name; txt.input.value = texto; toast('Texto lido do PDF.', { tone: 'success' }); } catch (x) { err.show(x.message); } finally { b.disabled = false; drawSrc(); }
       } }, icon(pdfNome ? 'check' : 'file'), pdfNome ? h('span', { class: 'truncate' }, pdfNome) : 'Enviar PDF'),
       h('button', { class: 'src-btn' + (texto && !pdfNome ? ' is-done' : ''), type: 'button', onclick: async () => { try { const t = await navigator.clipboard.readText(); if (t) { if (/\d{44}/.test(t) && t.length < 200) { entrada = t.trim(); ent.input.value = entrada; } else { texto = t; txt.input.value = t; } drawSrc(); } } catch { txt.input.focus(); } } }, icon(texto && !pdfNome ? 'check' : 'copy'), 'Colar da área de transferência'));
+    async function lerNoCelular(c) {
+      const nat = leitorNativo(), url = nat ? urlApiSefa(c) : '';
+      if (!url || texto.trim()) return;
+      const fim = toast('Lendo a nota no portal da SEFAZ…', { ico: 'receipt', duration: 45000 });
+      try {
+        const r = await nat.ler({ url });
+        texto = r.texto; txt.input.value = texto; drawSrc(); fim();
+        b.click();
+      } catch (x) {
+        fim();
+        toast(x && x.code === 'CAPTCHA' ? 'O portal pediu verificação. Abra a nota e cole o texto aqui.' : 'Não consegui ler a nota sozinho. Cole o texto ou envie o PDF.', { tone: 'danger' });
+      }
+    }
     drawSrc();
     const b = btn('Ler nota', { size: 'lg', full: true, icon: 'receipt' });
     b.onclick = async () => {
