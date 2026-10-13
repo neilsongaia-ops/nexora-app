@@ -303,7 +303,7 @@ a.tile:active { transform: var(--press); }
 .theme-pick { width: 100%; max-width: 360px; }
 .rep { display: flex; align-items: center; gap: var(--s4); }
 .rep-v { font-size: var(--t-4xl); font-weight: var(--w-x); line-height: 1; }
-.cols { display: grid; gap: var(--s5); }
+.cols { display: grid; gap: var(--s5); grid-template-columns: minmax(0, 1fr); }
 
 @media (min-width: 768px) {
   .tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); }

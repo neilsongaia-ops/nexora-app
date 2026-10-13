@@ -264,11 +264,11 @@ export function produtoForm({ edit, initial = {}, fromCatalog, conferirNome, onS
 async function lojas(ctx, body) {
   if (can('editor')) ctx.setFab({ label: 'Nova loja', icon: 'plus', onClick: () => lojaForm() });
   let modo = 'todas', pos = null, casa = null;
-  const tools = h('div', { class: 'chip-row' });
+  const tools = h('div', { class: 'chip-row chip-row--scroll' });
   const list = h('div', { class: 'list' }, skelRows(4));
   body.append(tools, list);
   load('deslocamento.ler', {}).then((d) => { casa = (d.enderecos || []).find((e) => e.padrao && e.status !== 'INATIVO') || null; if (casa) drawTools(); }).catch(() => {});
-  const drawTools = () => tools.replaceChildren(chip('Todas', { selected: modo === 'todas', onClick: () => { modo = 'todas'; draw(); } }), casa ? chip('Perto de ' + casa.nome, { selected: modo === 'casa', ic: 'home', onClick: () => { modo = 'casa'; draw(); } }) : '', can('editor') ? chip('Da comunidade', { ic: 'users', onClick: () => catalogoLojas(draw) }) : '', can('editor') ? chip('Atualizar localizações', { ic: 'locate', onClick: atualizarLocalizacoes }) : '', chip('Perto de mim', { selected: modo === 'perto', ic: 'pin', onClick: async () => { try { pos ||= await geolocate(); modo = 'perto'; draw(); } catch (e) { toast(e.message, { tone: 'danger' }); } } }));
+  const drawTools = () => tools.replaceChildren(chip('Todas', { selected: modo === 'todas', onClick: () => { modo = 'todas'; draw(); } }), casa ? chip('Perto de ' + casa.nome, { selected: modo === 'casa', ic: 'home', onClick: () => { modo = 'casa'; draw(); } }) : '', can('editor') ? chip('Da comunidade', { ic: 'users', onClick: () => catalogoLojas(draw) }) : '', chip('Perto de mim', { selected: modo === 'perto', ic: 'pin', onClick: async () => { try { pos ||= await geolocate(); modo = 'perto'; draw(); } catch (e) { toast(e.message, { tone: 'danger' }); } } }));
   const draw = async () => {
     drawTools(); list.replaceChildren(skelRows(4));
     try {
@@ -377,11 +377,6 @@ function catalogoLojas(depois) {
   }
   openSheet({ title: 'Lojas da comunidade', content: [busca, h('div', { class: 'btn-inline' }, perto), lista] });
   carregar();
-}
-
-async function atualizarLocalizacoes() {
-  try { const r = await call('lojas.atualizar_localizacoes', {}, { rid: uuid() }); toast(r.atualizadas ? `${r.atualizadas} loja(s) com a localização atualizada.` : 'Suas lojas já estão com a localização do diretório.', { tone: 'success' }); emit('dados'); }
-  catch (e) { toast(e.message, { tone: 'danger' }); }
 }
 
 export function denunciar(alvo_tipo, alvo_id) {

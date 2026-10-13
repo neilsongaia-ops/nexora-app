@@ -1272,7 +1272,7 @@ const R = {
   'cep.consultar': ({ cep, numero, latitude, longitude }) => {
     const c = String(cep || '').replace(/\D/g, ''); if (c.length !== 8) fail('CEP inválido: informe os 8 dígitos.');
     const o = { cep: c, logradouro: 'Rua dos Mundurucus', bairro: 'Guamá', cidade: 'Belém', uf: 'PA', numero: numero || '', latitude: -1.46, longitude: -48.48, precisao: numero ? 'numero' : 'rua', fonte: 'osm' };
-    o.endereco = ['Rua dos Mundurucus' + (numero ? ', ' + numero : ''), 'Guamá', 'Belém/PA', 'CEP ' + c.slice(0, 5) + '-' + c.slice(5)].join(' — ');
+    o.endereco = ['Rua dos Mundurucus' + (numero ? ', ' + numero : ''), 'Guamá', 'Belém/PA', 'CEP ' + c.slice(0, 5) + '-' + c.slice(5)].join(', ');
     if (latitude != null && longitude != null) { const km = hav(latitude, longitude, o.latitude, o.longitude); o.gps = { distancia_m: Math.round(km * 1000), confere: km <= 1.5 }; } else o.gps = null;
     return o;
   },
