@@ -1022,7 +1022,8 @@ const R = {
       if (!(p.dia_fechamento >= 1 && p.dia_fechamento <= 31) || !(p.dia_vencimento >= 1 && p.dia_vencimento <= 31)) fail('Informe os dias de fechamento e vencimento.');
       Object.assign(r, { limite: r2(p.limite), dia_fechamento: p.dia_fechamento, dia_vencimento: p.dia_vencimento, instituicao: p.instituicao || null, bandeira: p.bandeira || null, final: p.final || null, regra_fechamento: p.regra_fechamento || 'INCLUSIVO', recurso_pagamento_id: p.recurso_pagamento_id || null, anuidade: r2(p.anuidade), taxa_juros: Number(p.taxa_juros) || 0 });
     } else Object.assign(r, { tipo_conta: p.tipo_conta || null, instituicao: p.instituicao || null, agencia: p.agencia || null, numero: p.numero || null, saldo_inicial: r2(p.saldo_inicial), data_saldo_inicial: p.data_saldo_inicial || T });
-    if (p.tipo === 'CONTA') contaCampos(r, p);
+    // Conta nova sem limite_cheque nasce sem cheque especial (limite R$ 0, saída sem saldo bloqueada); null = sem controle.
+    if (p.tipo === 'CONTA') contaCampos(r, p.limite_cheque === undefined ? { ...p, limite_cheque: 0 } : p);
     r.data_criacao = T;
     S.recursos.push(r);
     if (r.tipo === 'CONTA') { if (r.cheque_especial) histAdd(S, r, 'limite_cheque', '', String(r.limite_cheque)); if (r.juros_cheque > 0) histAdd(S, r, 'juros_cheque', '', String(r.juros_cheque)); if (r.taxa_rendimento > 0) histAdd(S, r, 'taxa_rendimento', '', String(r.taxa_rendimento)); }

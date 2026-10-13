@@ -173,7 +173,7 @@ async function inativar(r, ctx) {
 
 export function openRecursoForm({ tipo = 'CONTA', edit } = {}) {
   const st = edit ? { ...edit, cheque_on: !!edit.cheque_especial, limite_cheque: Number(edit.limite_cheque) || 0, taxa_rendimento: Number(edit.taxa_rendimento) || 0, juros_cheque: Number(edit.juros_cheque) || 0, rendimento_unidade: edit.rendimento_unidade || 'MES', juros_cheque_unidade: edit.juros_cheque_unidade || 'MES' }
-    : { taxa_rendimento: 0, rendimento_unidade: 'MES', cheque_on: false, limite_cheque: 0, juros_cheque: 0, juros_cheque_unidade: 'MES', tipo, nome: '', tipo_conta: 'CORRENTE', instituicao: '', agencia: '', numero: '', saldo_inicial: 0, data_saldo_inicial: HOJE, limite: 0, dia_fechamento: 1, dia_vencimento: 10, bandeira: null, final: '', regra_fechamento: 'INCLUSIVO', recurso_pagamento_id: (recursosAtivos(['CONTA'])[0] || {}).id || null, anuidade: 0, taxa_juros: 0 };
+    : { taxa_rendimento: 0, rendimento_unidade: 'MES', cheque_on: true, limite_cheque: 0, juros_cheque: 0, juros_cheque_unidade: 'MES', tipo, nome: '', tipo_conta: 'CORRENTE', instituicao: '', agencia: '', numero: '', saldo_inicial: 0, data_saldo_inicial: HOJE, limite: 0, dia_fechamento: 1, dia_vencimento: 10, bandeira: null, final: '', regra_fechamento: 'INCLUSIVO', recurso_pagamento_id: (recursosAtivos(['CONTA'])[0] || {}).id || null, anuidade: 0, taxa_juros: 0 };
   const rid = uuid(), err = formError();
   let nomeF;
   const taxaF = (label, key) => textField(label, { value: st[key] ? String(st[key]).replace('.', ',') : '', inputmode: 'decimal', placeholder: '0', maxlength: 7, onInput: (v) => { const x = Number(String(v).replace(',', '.')); st[key] = x >= 0 ? x : 0; } });
@@ -182,12 +182,12 @@ export function openRecursoForm({ tipo = 'CONTA', edit } = {}) {
   const rendSec = () => secao('piggy', 'Rendimento', 'Opcional. Serve para estimar quanto a conta rende no mês; o app não lança o rendimento.', h('div', { class: 'grid-2' }, taxaF('Taxa (%)', 'taxa_rendimento'), unidF('rendimento_unidade', 'Período da taxa de rendimento')));
   const chqSec = () => {
     const hint = h('p', { class: 'chq-hint', 'aria-live': 'polite' });
-    const upd = () => hint.replaceChildren(icon(!st.cheque_on ? 'ban' : st.limite_cheque > 0 ? 'shield' : 'lock'), h('span', {}, !st.cheque_on ? 'O app não confere o saldo desta conta.' : st.limite_cheque > 0 ? 'Pode ficar até ' + money(st.limite_cheque) + ' negativa.' : 'R$ 0,00: sem cheque especial, não fica negativa.'));
+    const upd = () => hint.replaceChildren(icon(!st.cheque_on ? 'ban' : st.limite_cheque > 0 ? 'shield' : 'lock'), h('span', {}, !st.cheque_on ? 'O app não confere o saldo desta conta.' : st.limite_cheque > 0 ? 'Pode ficar até ' + money(st.limite_cheque) + ' negativa.' : 'R$ 0,00: sem cheque especial. Saída acima do saldo é bloqueada.'));
     const limF = moneyField('Limite total', { value: st.limite_cheque, onChange: (v) => { st.limite_cheque = v; upd(); } });
     const body = h('div', { class: 'form-sec-body', hidden: !st.cheque_on }, limF, h('div', { class: 'grid-2' }, taxaF('Juros (%)', 'juros_cheque'), unidF('juros_cheque_unidade', 'Período dos juros do cheque especial')));
-    const seg = segmented([{ value: 'off', label: 'Não informar' }, { value: 'on', label: 'Informar limite' }], { value: st.cheque_on ? 'on' : 'off', aria: 'Cheque especial', onChange: (v) => { st.cheque_on = v === 'on'; body.hidden = !st.cheque_on; upd(); if (st.cheque_on) setTimeout(() => limF.input.focus(), 50); } });
+    const seg = segmented([{ value: 'on', label: 'Controlar o saldo' }, { value: 'off', label: 'Não controlar o saldo' }], { value: st.cheque_on ? 'on' : 'off', aria: 'Controle do saldo', onChange: (v) => { st.cheque_on = v === 'on'; body.hidden = !st.cheque_on; upd(); if (st.cheque_on) setTimeout(() => limF.input.focus(), 50); } });
     upd();
-    return secao('shield', 'Cheque especial', 'Não informar: sem controle, como hoje. Informar: o app recusa saídas acima de saldo + limite, como o banco. R$ 0,00 = conta sem cheque especial.', seg, hint, body);
+    return secao('shield', 'Cheque especial', 'Controlar o saldo: o app recusa saídas acima de saldo + limite, como o banco. R$ 0,00 = conta sem cheque especial. Não controlar o saldo: a conta pode ficar negativa sem aviso.', seg, hint, body);
   };
   const build = () => {
     const out = [err];
@@ -220,7 +220,9 @@ export function openRecursoForm({ tipo = 'CONTA', edit } = {}) {
         if (edit) Object.assign(p, { taxa_rendimento: st.taxa_rendimento || 0, rendimento_unidade: st.rendimento_unidade || 'MES', limite_cheque: st.cheque_on ? r2(st.limite_cheque) : null, juros_cheque: st.juros_cheque || 0, juros_cheque_unidade: st.juros_cheque_unidade || 'MES' });
         else {
           if (st.taxa_rendimento > 0) Object.assign(p, { taxa_rendimento: st.taxa_rendimento, rendimento_unidade: st.rendimento_unidade || 'MES' });
+          // Omitir limite_cheque = servidor cria com limite R$ 0; null = sem controle do saldo.
           if (st.cheque_on) Object.assign(p, { limite_cheque: r2(st.limite_cheque), juros_cheque: st.juros_cheque || 0, juros_cheque_unidade: st.juros_cheque_unidade || 'MES' });
+          else p.limite_cheque = null;
         }
       }
       if (edit) await call('recursos.atualizar', { id: edit.id, versao: edit.versao, ...p }, { rid });
