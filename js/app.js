@@ -183,7 +183,10 @@ async function route() {
   window.scrollTo(0, 0);
 }
 on('recarregar', () => route());
-on('dados', () => { invalidate(); if (current) route(); });
+// Escrita em contas/cartões/categorias/espaço/config/perfil recarrega o bootstrap (store.boot). Se a tela for redesenhada antes dessa recarga
+// terminar (ex.: criar a primeira conta na tela inicial), ela ainda enxerga os recursos antigos: por isso 'dados' espera a recarga em andamento.
+let bootRecarga = null;
+on('dados', async () => { invalidate(); if (bootRecarga) await bootRecarga; if (current) route(); });
 
 // ---------- erros globais ----------
 on('api-erro', (e) => {
@@ -233,7 +236,7 @@ function showSemBanco() {
   a.replaceChildren(h('div', { class: 'auth-card' }, h('span', { class: 'logo logo--lg' }, h('span', { class: 'logo-dot' })), h('h1', { class: 'auth-title' }, 'Quase lá'), err, b));
 }
 on('boot', () => { if (!qs('#app').hidden) { renderNav(); document.documentElement.classList.toggle('is-readonly', !can('editor')); } });
-on('escrita', (a) => { if (/^(recursos|categorias|ws|config|perfil)\./.test(a)) loadBoot().catch(() => {}); });
+on('escrita', (a) => { if (/^(recursos|categorias|ws|config|perfil)\./.test(a)) bootRecarga = loadBoot().catch(() => {}).finally(() => { bootRecarga = null; }); });
 
 // ---------- offline ----------
 function net(msg) { const n = qs('#net'); n.hidden = !msg; n.replaceChildren(msg ? icon('wifiOff') : '', msg ? h('span', {}, msg) : ''); }
