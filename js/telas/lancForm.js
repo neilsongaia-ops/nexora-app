@@ -2,7 +2,7 @@
 import { h, money, r2, HOJE, uuid, draft, debounce, emit } from '../util.js';
 import { icon } from '../icons.js';
 import { call, ApiError } from '../api.js';
-import { store, recursosAtivos, categoriasDe, saldoDe, can } from '../store.js';
+import { store, recursosAtivos, categoriasDe, saldoDe, can, loadBoot } from '../store.js';
 import { openSheet } from '../ui/sheet.js';
 import { toast, successBurst } from '../ui/toast.js';
 import { segmented, moneyField, textField, pickField, dateField, stepper, btn, formError, badge, tip, TIPO, kv } from '../ui/components.js';
@@ -14,6 +14,24 @@ export function recursoItems({ semCartao, soCartao } = {}) {
     .sort((a, b) => 'CONTA CARTEIRA CARTAO'.indexOf(a.tipo) - 'CONTA CARTEIRA CARTAO'.indexOf(b.tipo))
     .map((r) => { const s = saldoDe(r.id); return { value: r.id, label: r.nome, group: G[r.tipo], icon: r.tipo === 'CARTAO' ? 'card' : r.tipo === 'CARTEIRA' ? 'coin' : 'wallet', right: r.tipo === 'CARTAO' ? (r.final ? '•••• ' + r.final : '') : s ? money(s.saldo_atual) : '' }; });
 }
+/** Atalho do seletor de categoria: cria a categoria sem sair do lançamento e devolve a nova (ou null se desistir). */
+export function novaCategoria(tipo, depois) {
+  if (!can('editor')) { toast('Seu papel neste espaço é só de leitura.', { ico: 'lock' }); return; }
+  let nome = '';
+  const err = formError(), rid = uuid();
+  const f = textField('Nome', { placeholder: tipo === 'RECEITA' ? 'Ex.: Empréstimo recebido' : 'Ex.: Contas da casa', autofocus: true, onInput: (v) => { nome = v; f.setError(''); } });
+  const b = btn('Salvar categoria', { size: 'lg', full: true });
+  b.onclick = async () => {
+    if (!nome.trim()) { f.setError('Dê um nome'); f.input.focus(); return; }
+    b.disabled = true; b.setAttribute('aria-busy', 'true'); err.show('');
+    try {
+      const c = await call('categorias.salvar', { nome: nome.trim(), tipo }, { rid });
+      await loadBoot(); await sh.close(); toast('Categoria criada.', { tone: 'success' }); depois && depois(c);
+    } catch (e) { err.show(e.message); } finally { b.disabled = false; b.removeAttribute('aria-busy'); }
+  };
+  const sh = openSheet({ title: tipo === 'RECEITA' ? 'Nova categoria de receita' : 'Nova categoria de despesa', content: [err, f], footer: b });
+}
+
 export function categoriaItems(tipo) {
   const cs = categoriasDe(tipo), out = [];
   cs.filter((c) => !c.pai_id).sort((a, b) => a.nome.localeCompare(b.nome)).forEach((p) => {
@@ -80,7 +98,9 @@ export function openLancForm({ tipo = 'SAIDA', initial, edit, onSaved } = {}) {
       out.push(h('div', { class: 'form-readonly' }, r ? kv(st.tipo === 'SAIDA' ? 'Pago com' : 'Recebido em', r.nome) : null, o ? kv('De', o.nome) : null, d ? kv('Para', d.nome) : null));
     }
     if (st.tipo !== 'TRANSFERENCIA') {
-      fields.cat = pickField('Categoria', { value: st.categoria_id, items: () => categoriaItems(st.tipo === 'ENTRADA' ? 'RECEITA' : 'DESPESA'), placeholder: 'Sem categoria', ic: 'tag', display: (v, it) => (it ? (it.sub ? it.sub + ' › ' + it.label : it.label) : 'Sem categoria'), onChange: (v) => { st.categoria_id = v; persist(); } });
+      const tipoCat = () => (st.tipo === 'ENTRADA' ? 'RECEITA' : 'DESPESA');
+      fields.cat = pickField('Categoria', { value: st.categoria_id, items: () => categoriaItems(tipoCat()), placeholder: 'Sem categoria', ic: 'tag',
+        action: can('editor') ? { label: 'Nova categoria', icon: 'plus', onClick: () => novaCategoria(tipoCat(), (c) => { st.categoria_id = c.id; fields.cat.set(c.id); persist(); }) } : null, display: (v, it) => (it ? (it.sub ? it.sub + ' › ' + it.label : it.label) : 'Sem categoria'), onChange: (v) => { st.categoria_id = v; persist(); } });
       out.push(fields.cat);
     }
     if (isContaSaida() && (!edit || !['CANCELADO', 'ESTORNADO'].includes(edit.status))) out.push(cobrancaField(st.cobranca_banco, (v) => { st.cobranca_banco = v; persist(); }));
