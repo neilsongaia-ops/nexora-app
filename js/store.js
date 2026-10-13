@@ -6,7 +6,12 @@ export const store = { boot: null, cats: new Map(), recs: new Map(), role: 'leit
 const RANK = { leitura: 1, editor: 2, admin: 3 };
 
 export async function loadBoot() {
-  const b = await call('bootstrap');
+  let b;
+  try { b = await call('bootstrap'); }
+  catch (e) {
+    // o espaço guardado neste aparelho não existe mais (ex.: banco refeito): esquece-o e entra no primeiro espaço da pessoa
+    if (e && e.codigo === 'SEM_ESPACO' && session.ws) { setSession({ ws: '' }); b = await call('bootstrap'); } else throw e;
+  }
   store.boot = b;
   setHoje(b.hoje);
   store.cats = new Map((b.categorias || []).map((c) => [c.id, c]));
