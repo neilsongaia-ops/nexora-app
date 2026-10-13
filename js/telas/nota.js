@@ -11,9 +11,15 @@ import { recursoItems } from './lancForm.js';
 
 // No app Android (Capacitor) o celular consulta o portal da SEFAZ por um WebView do próprio aparelho: o servidor do Apps Script é bloqueado, o celular não.
 // Sem o app, ou com QR que exige captcha, o fluxo de sempre (colar texto ou enviar PDF) continua valendo.
+// Com a interface carregada de um site remoto o Capacitor injeta um objeto enxuto (sem registerPlugin): tenta os 3 caminhos possíveis.
 const leitorNativo = () => {
   const C = window.Capacitor;
-  return C && C.isNativePlatform && C.isNativePlatform() && C.isPluginAvailable && C.isPluginAvailable('NfceReader') ? C.registerPlugin('NfceReader') : null;
+  if (!(C && C.isNativePlatform && C.isNativePlatform() && C.isPluginAvailable && C.isPluginAvailable('NfceReader'))) return null;
+  if (typeof C.registerPlugin === 'function') { dbg('plugin via registerPlugin'); return C.registerPlugin('NfceReader'); }
+  if (C.Plugins && C.Plugins.NfceReader) { dbg('plugin via Capacitor.Plugins'); return C.Plugins.NfceReader; }
+  if (typeof C.nativePromise === 'function') { dbg('plugin via nativePromise'); return { ler: (o) => C.nativePromise('NfceReader', 'ler', o) }; }
+  dbg('plugin existe mas nenhum caminho de chamada está disponível', Object.keys(C));
+  return null;
 };
 const urlApiSefa = (c) => {
   const m = String(c || '').match(/[?&]p=([^&#\s]+)/i);
@@ -30,7 +36,7 @@ const mascara = (c) => String(c || '').replace(/(\||%7C)[^|%&#\s]*$/i, '$1***');
 const dbgAmbiente = () => {
   const C = window.Capacitor || {};
   return { site: location.origin + location.pathname, capacitor: !!window.Capacitor, plataforma: C.getPlatform ? C.getPlatform() : null, nativo: C.isNativePlatform ? C.isNativePlatform() : null,
-    pluginNfceReader: C.isPluginAvailable ? C.isPluginAvailable('NfceReader') : null, online: navigator.onLine, ua: navigator.userAgent };
+    pluginNfceReader: C.isPluginAvailable ? C.isPluginAvailable('NfceReader') : null, online: navigator.onLine, capacitorExpoe: Object.keys(C).slice(0, 30), ua: navigator.userAgent };
 };
 function dbgMostrar() {
   const ta = h('textarea', { readonly: true, rows: 14, 'aria-label': 'Diagnóstico', style: { width: '100%', font: '12px/1.4 monospace', padding: '10px', borderRadius: '12px', boxSizing: 'border-box' } });
