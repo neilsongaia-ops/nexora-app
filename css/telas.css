@@ -561,3 +561,5 @@ a.tile:active { transform: var(--press); }
   .pack-sug > .ico { display: none; }
   .pack-acts { justify-content: flex-end; }
 }
+.loc-cep { display: flex; flex-direction: column; gap: 4px; margin: -4px 0 12px; }
+.loc-cep:empty { display: none; }

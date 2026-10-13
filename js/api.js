@@ -20,12 +20,12 @@ export const READS = new Set(['bootstrap', 'ws.listar', 'membros.listar', 'recur
   'alertas.precos', 'reputacao.minha', 'config.ler', 'listas.listar', 'listas.detalhe', 'sessoes.listar', 'sessoes.detalhe',
   'comparacao.lista', 'nfce.interpretar', 'admin.painel', 'admin.catalogo', 'admin.denuncias', 'exportar.espaco', 'ws.resumo', 'ws.arquivados',
   'notificacoes.listar', 'notificacoes.contar', 'notificacoes.preferencias', 'convites.recebidos', 'convites.enviados',
-  'historico.listar', 'historico.serie', 'deslocamento.ler', 'perfil.ler']);
+  'historico.listar', 'historico.serie', 'deslocamento.ler', 'perfil.ler', 'cep.consultar', 'cnpj.consultar', 'lojas.catalogo']);
 // Leituras que nunca entram em cache (memória ou aparelho) e não recebem _rid: o CPF completo só existe enquanto está na tela
 const READ_NC = new Set(['perfil.cpf']);
 // produtos.indice guarda a própria cópia (js/indice.js); cada "desde" é uma chave nova e encheria o aparelho
 const NO_OFFLINE = new Set(['produtos.indice', 'ws.resumo', 'ws.arquivados', 'produtos.imagens', 'exportar.espaco', 'nfce.interpretar', 'integridade.verificar',
-  'notificacoes.listar', 'notificacoes.contar', 'notificacoes.preferencias_salvar', 'convites.recebidos', 'convites.enviados', 'perfil.cpf']);
+  'notificacoes.listar', 'notificacoes.contar', 'notificacoes.preferencias_salvar', 'cep.consultar', 'cnpj.consultar', 'lojas.catalogo', 'convites.recebidos', 'convites.enviados', 'perfil.cpf']);
 // confirmar preço e denunciar exigem só "leitura", mas são escritas (não usar cache)
 export const isWrite = (a) => !READS.has(a) && !PUBLIC.has(a) && !READ_NC.has(a);
 

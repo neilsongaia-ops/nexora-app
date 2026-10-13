@@ -16,6 +16,8 @@ export const TIPO_VEIC = { CARRO: { label: 'Carro', icon: 'car' }, MOTO: { label
 const DO_COMB = { GASOLINA: 'da gasolina', ETANOL: 'do etanol', DIESEL: 'do diesel', GNV: 'do GNV', ELETRICO: 'da energia elétrica' };
 const UN_TXT = { litro: 'litro', 'm³': 'm³', kWh: 'kWh' };
 const ativo = (x) => x && x.status !== 'INATIVO';
+const ORIGEM_LOC = { gps: 'Pelo GPS', mapa: 'Marcada no mapa', 'cep:numero': 'No número, pelo CEP', 'cep:rua': 'Na rua, pelo CEP', 'cep:cep': 'Aproximada pelo CEP (pode errar mais de 1 km)' };
+const cepMask = (v) => { const d = String(v || '').replace(/\D/g, '').slice(0, 8); return d.length > 5 ? d.slice(0, 5) + '-' + d.slice(5) : d; };
 const combDe = (d, c) => (d.combustiveis || []).find((x) => x.combustivel === c) || { combustivel: c, nome: c, unidade: c === 'GNV' ? 'm³' : c === 'ELETRICO' ? 'kWh' : 'litro', preco: null };
 export const consumoUn = (d, c) => 'km/' + ({ litro: 'l', 'm³': 'm³', kWh: 'kWh' }[combDe(d, c).unidade] || 'l');
 export const kmTxt = (v) => 'R$\u00a0' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: v < 1 ? 3 : 2 }) + '/km';
@@ -78,48 +80,77 @@ export default async function deslocamento(ctx) {
         ] }),
       }))) : empty({ ic: 'home', title: 'Cadastre onde você mora para ver o custo de ir às lojas', action: btn('Cadastrar endereço', { icon: 'plus', onClick: () => enderecoForm() }) }));
   }
-  const base = (e) => ({ id: e.id, nome: e.nome, endereco: e.endereco || undefined, latitude: e.latitude, longitude: e.longitude });
+  const base = (e) => ({ id: e.id, nome: e.nome, endereco: e.endereco || undefined, latitude: e.latitude, longitude: e.longitude, loc_origem: e.loc_origem === 'mapa' ? 'mapa' : undefined });
   async function salvarEnd(p, msg) { try { await call('enderecos.salvar', p, { rid: uuid() }); salvo(msg); reload({ semComb: true }); } catch (e) { toast(e.message, { tone: 'danger' }); } }
 
   function enderecoForm(edit) {
-    const st = { nome: '', endereco: '', latitude: null, longitude: null, padrao: false, ...(edit || {}) };
-    st.endereco = st.endereco || '';
+    const st = { nome: '', endereco: '', latitude: null, longitude: null, padrao: false, cep: '', numero: '', complemento: '', loc_origem: '', ...(edit || {}) };
+    st.endereco = st.endereco || ''; st.cep = cepMask(st.cep); st.numero = st.numero || ''; st.complemento = st.complemento || '';
+    st.userCoord = st.latitude != null && !String(st.loc_origem || '').startsWith('cep');       // coordenada que a pessoa marcou (GPS/mapa): vale mais que a do CEP
+    st.origem = st.loc_origem || (st.userCoord ? 'gps' : '');
     const err = formError(), rid = uuid();
     const temOutros = d.enderecos.filter(ativo).some((x) => !edit || x.id !== edit.id);
     const fn = textField('Nome', { value: st.nome, placeholder: 'Ex.: Casa, Trabalho', autofocus: !edit, onInput: (v) => { st.nome = v; fn.setError(''); } });
-    const fe = textField('Endereço', { value: st.endereco, placeholder: 'Rua, número, bairro', autocomplete: 'street-address', onInput: (v) => { st.endereco = v; fe.setError(''); } });
+    const fe = textField('Endereço', { value: st.endereco, placeholder: 'Rua, número, bairro', autocomplete: 'street-address', onInput: (v) => { st.endereco = v; st.endManual = true; fe.setError(''); } });
+    const cepInfo = h('div', { class: 'loc-cep', 'aria-live': 'polite' });
+    let seq = 0;
+    const consultar = async () => {
+      const cep = st.cep.replace(/\D/g, ''), n = ++seq;
+      if (cep.length !== 8) { cepInfo.replaceChildren(); st.achado = null; return; }
+      cepInfo.replaceChildren(h('span', { class: 'loc-sub' }, 'Buscando o CEP…'));
+      try {
+        const r = await call('cep.consultar', { cep, numero: st.numero.trim() || undefined, ...(st.userCoord && st.latitude != null ? { latitude: st.latitude, longitude: st.longitude } : {}) });
+        if (n !== seq) return;
+        st.achado = r;
+        if (!st.userCoord && r.latitude != null) { st.latitude = r.latitude; st.longitude = r.longitude; st.origem = 'cep:' + r.precisao; drawLoc(); }
+        if (!st.endManual) { st.endereco = r.endereco; fe.input.value = r.endereco; }
+        const out = [h('span', { class: 'loc-k' }, [r.logradouro, r.bairro, r.cidade && r.uf ? r.cidade + '/' + r.uf : r.cidade].filter(Boolean).join(' · '))];
+        if (r.gps && !r.gps.confere) out.push(h('div', { class: 'field-err', role: 'alert' }, `O GPS está a ${(r.gps.distancia_m / 1000).toFixed(1).replace('.', ',')} km do endereço deste CEP. Confira o CEP e o número.`),
+          h('div', { class: 'btn-inline' }, btn('Usar o endereço do CEP', { kind: 'secondary', size: 'sm', onClick: () => { st.userCoord = false; st.latitude = r.latitude; st.longitude = r.longitude; st.origem = 'cep:' + r.precisao; drawLoc(); consultar(); } }),
+            btn('Manter o GPS', { kind: 'secondary', size: 'sm', onClick: () => cepInfo.replaceChildren(h('span', { class: 'loc-sub' }, 'Mantido o local do GPS.')) })));
+        cepInfo.replaceChildren(...out);
+      } catch (e) { if (n === seq) { st.achado = null; cepInfo.replaceChildren(h('span', { class: 'field-err', role: 'alert' }, e.message)); } }
+    };
+    const fcep = textField('CEP', { value: st.cep, inputmode: 'numeric', placeholder: '00000-000', autocomplete: 'postal-code', maxlength: 9, onInput: (v) => { st.cep = cepMask(v); fcep.input.value = st.cep; if (st.cep.length === 9 || !st.cep) consultar(); } });
+    const fnum = textField('Número', { value: st.numero, placeholder: 'Ex.: 120', onInput: (v) => { st.numero = v; } });
+    fnum.input.addEventListener('change', () => { if (st.cep.length === 9) consultar(); });
+    const fcomp = textField('Complemento', { value: st.complemento, placeholder: 'Opcional', onInput: (v) => { st.complemento = v; } });
+    if (st.cep.length === 9) setTimeout(consultar, 0);
     const locTxt = h('span', { class: 'loc-txt' }), locIco = h('span', { class: 'tipo-ico' });
     const locErr = h('span', { class: 'field-err', role: 'alert' });
     const drawLoc = () => {
       const ok = st.latitude != null;
       locIco.className = 'tipo-ico' + (ok ? ' tone-in' : '');
       locIco.replaceChildren(icon(ok ? 'check' : 'pin'));
-      locTxt.replaceChildren(h('span', { class: 'loc-k' }, ok ? 'Local marcado' : 'Sem local'), ok ? h('span', { class: 'loc-sub num' }, coordTxt(st.latitude, st.longitude)) : '');
+      locTxt.replaceChildren(h('span', { class: 'loc-k' }, ok ? (ORIGEM_LOC[st.origem] || 'Local marcado') : 'Sem local'), ok ? h('span', { class: 'loc-sub num' }, coordTxt(st.latitude, st.longitude)) : '');
       if (ok) locErr.textContent = '';
     };
-    const setLoc = (p) => { st.latitude = p.latitude; st.longitude = p.longitude; if (p.endereco && !st.endereco.trim()) { st.endereco = p.endereco; fe.input.value = p.endereco; } drawLoc(); };
+    const setLoc = (p, origem) => { st.latitude = p.latitude; st.longitude = p.longitude; st.userCoord = true; st.origem = origem; if (p.endereco && !st.endereco.trim()) { st.endereco = p.endereco; fe.input.value = p.endereco; } drawLoc(); if (st.cep.length === 9) consultar(); };
     const wrap = async (b, fn2) => { b.disabled = true; b.setAttribute('aria-busy', 'true'); try { await fn2(); } catch (x) { locErr.textContent = x.message; } finally { b.disabled = false; b.removeAttribute('aria-busy'); } };
-    const bGps = btn('Onde estou', { kind: 'secondary', size: 'sm', icon: 'locate', onClick: (e) => wrap(e.currentTarget, async () => setLoc(await geolocate())) });
+    const bGps = btn('Onde estou', { kind: 'secondary', size: 'sm', icon: 'locate', onClick: (e) => wrap(e.currentTarget, async () => setLoc(await geolocate(), 'gps')) });
     const bBusca = btn('Buscar', { kind: 'secondary', size: 'sm', icon: 'search', onClick: (e) => wrap(e.currentTarget, async () => {
       const q = st.endereco.trim();
       if (!q) { fe.setError('Digite o endereço para buscar'); fe.input.focus(); return; }
       const r = await escolherResultado(await buscarEndereco(q));
-      if (r) setLoc(r);
+      if (r) setLoc(r, 'mapa');
     }) });
-    const bMapa = btn('No mapa', { kind: 'secondary', size: 'sm', icon: 'map', onClick: async () => { const r = await escolherNoMapa({ latitude: st.latitude, longitude: st.longitude, busca: st.endereco.trim() }); if (r) setLoc(r); } });
+    const bMapa = btn('No mapa', { kind: 'secondary', size: 'sm', icon: 'map', onClick: async () => { const r = await escolherNoMapa({ latitude: st.latitude, longitude: st.longitude, busca: st.endereco.trim() }); if (r) setLoc(r, 'mapa'); } });
     drawLoc();
     const pad = temOutros ? toggle('Endereço padrão', { checked: !!st.padrao, disabled: !!(edit && edit.padrao), onChange: (v) => { st.padrao = v; } }) : null;
     const b = btn(edit ? 'Salvar' : 'Cadastrar endereço', { size: 'lg', full: true });
     b.onclick = async () => {
       if (!st.nome.trim()) { fn.setError('Dê um nome'); fn.input.focus(); return; }
-      if (st.latitude == null) { locErr.textContent = 'Marque o local'; bGps.focus(); return; }
+      if (st.latitude == null && st.cep.length !== 9) { locErr.textContent = 'Informe o CEP ou marque o local'; bGps.focus(); return; }
       b.disabled = true; b.setAttribute('aria-busy', 'true'); err.show('');
       try {
-        await call('enderecos.salvar', { ...(edit ? { id: edit.id } : {}), nome: st.nome.trim(), endereco: st.endereco.trim() || undefined, latitude: st.latitude, longitude: st.longitude, padrao: st.padrao || undefined }, { rid });
-        await s.close(); salvo(edit ? 'Endereço salvo.' : 'Endereço cadastrado.'); reload({ semComb: true });
+        const temCep = st.cep.length === 9;
+        const r = await call('enderecos.salvar', { ...(edit ? { id: edit.id } : {}), nome: st.nome.trim(), endereco: temCep && !st.endManual && !edit ? undefined : st.endereco.trim() || undefined,
+          cep: temCep ? st.cep.replace(/\D/g, '') : (edit && edit.cep ? '' : undefined), numero: st.numero.trim(), complemento: st.complemento.trim(),
+          ...(st.userCoord ? { latitude: st.latitude, longitude: st.longitude, loc_origem: st.origem === 'mapa' ? 'mapa' : 'gps' } : {}), padrao: st.padrao || undefined }, { rid });
+        await s.close(); salvo(edit ? 'Endereço salvo.' : 'Endereço cadastrado.'); if (r && r.aviso) toast(r.aviso, { tone: 'danger', duration: 8000 }); reload({ semComb: true });
       } catch (e) { err.show(e.message); } finally { b.disabled = false; b.removeAttribute('aria-busy'); }
     };
-    const s = openSheet({ title: edit ? 'Editar endereço' : 'Novo endereço', footer: b, content: [err, fn, fe,
+    const s = openSheet({ title: edit ? 'Editar endereço' : 'Novo endereço', footer: b, content: [err, fn, h('div', { class: 'grid-2' }, fcep, fnum), fcomp, cepInfo, fe,
       h('div', { class: 'field loc-field' }, h('span', { class: 'field-label' }, 'Local'),
         h('div', { class: 'loc-box' }, h('div', { class: 'loc-now' }, locIco, locTxt), h('div', { class: 'loc-acts' }, bGps, bBusca, bMapa)), locErr),
       pad ? h('div', { class: 'set-group' }, pad) : null] });

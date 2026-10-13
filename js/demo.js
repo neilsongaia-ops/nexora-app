@@ -1258,11 +1258,34 @@ const R = {
   'produtos.imagens': ({ ids = [] }, { S }) => Object.fromEntries(ids.map((id) => { const p = prodOf(S, id); const own = DB.imagens[id], cat = p && p.gtin && DB.imagens['g:' + p.gtin]; return [id, own ? { dados: own, fonte: 'ESPACO' } : cat ? { dados: cat, fonte: 'CATALOGO' } : null]; })),
   'lojas.listar': (p, { S }) => S.lojas.filter((l) => l.status !== 'INATIVA'),
   'lojas.salvar': (p, { S }) => {
-    if (p.id) { const l = S.lojas.find((x) => x.id === p.id) || fail('Loja não encontrada.'); ['nome', 'cnpj', 'cidade', 'uf', 'latitude', 'longitude'].forEach((k) => { if (p[k] !== undefined) l[k] = p[k]; }); l.versao++; return l; }
+    if (p.id) { const l = S.lojas.find((x) => x.id === p.id) || fail('Loja não encontrada.'); ['nome', 'cnpj', 'cidade', 'uf', 'latitude', 'longitude', 'cep', 'logradouro', 'numero', 'bairro'].forEach((k) => { if (p[k] !== undefined) l[k] = p[k]; }); if (p.latitude != null) l.loc_origem = 'informada'; l.versao++; return l; }
     if (!String(p.nome || '').trim()) fail('Dê um nome à loja.');
-    const l = { id: nid('lj'), nome: p.nome.trim(), cnpj: (p.cnpj || '').replace(/\D/g, '') || null, cidade: p.cidade || null, uf: p.uf || null, latitude: p.latitude ?? null, longitude: p.longitude ?? null, status: 'ATIVA', versao: 1 };
+    const l = { id: nid('lj'), nome: p.nome.trim(), cnpj: (p.cnpj || '').replace(/\D/g, '') || null, cidade: p.cidade || null, uf: p.uf || null, latitude: p.latitude ?? null, longitude: p.longitude ?? null, cep: p.cep || '', logradouro: p.logradouro || '', numero: p.numero || '', bairro: p.bairro || '', loc_origem: p.latitude != null ? 'informada' : '', status: 'ATIVA', versao: 1 };
     S.lojas.push(l); return l;
   },
+  'cnpj.consultar': ({ cnpj }) => {
+    const c = String(cnpj || '').replace(/\D/g, ''); if (c.length !== 14) fail('CNPJ inválido (confira os dígitos).');
+    const g = DB.lojasGlobais.find((x) => x.cnpj === c);
+    return g ? { cnpj: c, nome: g.nome, razao_social: g.nome, situacao: 'ATIVA', ativa: true, logradouro: 'Avenida Exemplo', numero: '100', bairro: 'Centro', cep: '66000000', cidade: g.cidade, uf: g.uf, latitude: g.latitude, longitude: g.longitude, precisao: 'catalogo', fonte: 'catalogo', loc_origem: 'oficial', ja_no_catalogo: true, loja_id: null }
+      : { cnpj: c, nome: 'Mercado Exemplo', razao_social: 'Mercado Exemplo Ltda', situacao: 'ATIVA', ativa: true, logradouro: 'Rua do Arsenal', numero: '120', bairro: 'Centro', cep: '66000000', cidade: 'Belém', uf: 'PA', latitude: -1.455, longitude: -48.49, precisao: 'numero', fonte: 'oficial', loc_origem: 'oficial', ja_no_catalogo: false, loja_id: null };
+  },
+  'cep.consultar': ({ cep, numero, latitude, longitude }) => {
+    const c = String(cep || '').replace(/\D/g, ''); if (c.length !== 8) fail('CEP inválido: informe os 8 dígitos.');
+    const o = { cep: c, logradouro: 'Rua dos Mundurucus', bairro: 'Guamá', cidade: 'Belém', uf: 'PA', numero: numero || '', latitude: -1.46, longitude: -48.48, precisao: numero ? 'numero' : 'rua', fonte: 'osm' };
+    o.endereco = ['Rua dos Mundurucus' + (numero ? ', ' + numero : ''), 'Guamá', 'Belém/PA', 'CEP ' + c.slice(0, 5) + '-' + c.slice(5)].join(' — ');
+    if (latitude != null && longitude != null) { const km = hav(latitude, longitude, o.latitude, o.longitude); o.gps = { distancia_m: Math.round(km * 1000), confere: km <= 1.5 }; } else o.gps = null;
+    return o;
+  },
+  'lojas.catalogo': ({ texto, latitude, longitude }, { S }) => {
+    const t = String(texto || '').toLowerCase(), dig = t.replace(/\D/g, '');
+    const itens = DB.lojasGlobais.filter((g) => !t || g.nome.toLowerCase().includes(t) || (dig.length >= 4 && g.cnpj.includes(dig))).map((g) => {
+      const minha = S.lojas.find((l) => l.cnpj === g.cnpj);
+      return { global_id: g.id, nome: g.nome, razao_social: g.nome, cnpj: g.cnpj, cidade: g.cidade, uf: g.uf, bairro: '', endereco: g.cidade + '/' + g.uf, latitude: g.latitude, longitude: g.longitude, loc_origem: 'oficial',
+        distancia_km: latitude != null ? r2(hav(latitude, longitude, g.latitude, g.longitude)) : null, ja_tenho: !!minha, loja_id: minha ? minha.id : null };
+    });
+    return { total: itens.length, itens };
+  },
+  'lojas.atualizar_localizacoes': () => ({ atualizadas: 0, lojas: [] }),
   'lojas.proximas': ({ latitude, longitude, raio_km = 10 }, { S }) => S.lojas.concat(DB.lojasGlobais).filter((l) => l.latitude != null).map((l) => ({ ...l, distancia_km: r2(hav(latitude, longitude, l.latitude, l.longitude)) })).filter((l) => l.distancia_km <= raio_km).sort((a, b) => a.distancia_km - b.distancia_km),
   'precos.registrar': ({ produto_id, loja_id, preco, data, chave_nfce }, { S }) => {
     if (!prodOf(S, produto_id)) fail('Produto não encontrado.');
@@ -1333,7 +1356,7 @@ const R = {
     const lat = numOr(p.latitude, e ? e.latitude : null), lng = numOr(p.longitude, e ? e.longitude : null);
     if (lat == null || lng == null || !Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) fail('Marque o local do endereço: use onde você está, o mapa ou a busca.');
     if (!e) { e = { id: nid('en'), status: 'ATIVO', padrao: false }; d.enderecos.push(e); }
-    Object.assign(e, { nome, latitude: lat, longitude: lng, endereco: p.endereco !== undefined ? String(p.endereco || '').trim() || null : e.endereco ?? null });
+    Object.assign(e, { cep: p.cep !== undefined ? String(p.cep).replace(/\D/g, '') : e.cep || '', numero: p.numero ?? e.numero ?? '', complemento: p.complemento ?? e.complemento ?? '', loc_origem: p.latitude != null ? (p.loc_origem === 'mapa' ? 'mapa' : 'gps') : e.loc_origem || '', nome, latitude: lat, longitude: lng, endereco: p.endereco !== undefined ? String(p.endereco || '').trim() || null : e.endereco ?? null });
     if (p.status === 'INATIVO' || p.status === 'ATIVO') e.status = p.status;
     fixPadrao(d.enderecos, p.padrao && ativoD(e) ? e : null);
     return e;

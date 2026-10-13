@@ -133,6 +133,7 @@ export default async function nota(ctx) {
         if (res.loja_id) p.loja_id = res.loja_id; else p.loja = { nome: titulo(res.emitente || 'Loja'), cnpj: res.cnpj || undefined, cidade: res.endereco && res.endereco.cidade, uf: res.endereco && res.endereco.uf };
         const r = await call('nfce.importar', p, { rid: uuid() });
         await successBurst(root, 'Nota importada');
+        if (r.avisos && r.avisos.length) toast('Alguns preços não foram registrados: ' + r.avisos.join(' '), { tone: 'danger', duration: 9000 });
         toast('Nota importada: lançamento, produtos e preços.', { tone: 'success', action: { label: 'Ver lançamento', onClick: async () => (await import('./lancAcoes.js')).openLancDetail(r.lancamento.id) } });
         entrada = texto = pdfNome = ''; res = null; emit('dados');
       } catch (x) { err.show(x.message); b.disabled = false; } finally { b.removeAttribute('aria-busy'); }
