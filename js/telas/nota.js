@@ -65,16 +65,27 @@ export default async function nota(ctx) {
         try { texto = await pdfText(f); pdfNome = f.name; txt.input.value = texto; toast('Texto lido do PDF.', { tone: 'success' }); } catch (x) { err.show(x.message); } finally { b.disabled = false; drawSrc(); }
       } }, icon(pdfNome ? 'check' : 'file'), pdfNome ? h('span', { class: 'truncate' }, pdfNome) : 'Enviar PDF'),
       h('button', { class: 'src-btn' + (texto && !pdfNome ? ' is-done' : ''), type: 'button', onclick: async () => { try { const t = await navigator.clipboard.readText(); if (t) { if (/\d{44}/.test(t) && t.length < 200) { entrada = t.trim(); ent.input.value = entrada; } else { texto = t; txt.input.value = t; } drawSrc(); } } catch { txt.input.focus(); } } }, icon(texto && !pdfNome ? 'check' : 'copy'), 'Colar da área de transferência'));
+    // [DEPURADOR] qualquer erro inesperado dentro da leitura nativa vira uma linha do relatório (antes ficava mudo)
     async function lerNoCelular(c) {
+      try { await lerNoCelularInterno(c); }
+      catch (e) {
+        dbg('ERRO INESPERADO no app (antes do plugin responder)', { nome: e && e.name, mensagem: e && e.message, pilha: String((e && e.stack) || '').slice(0, 500) });
+        toast('Erro ao iniciar a leitura da nota. Veja o diagnóstico.', { tone: 'danger', action: { label: 'Diagnóstico', onClick: dbgMostrar } });
+      }
+    }
+    async function lerNoCelularInterno(c) {
       dbg('ambiente', dbgAmbiente());
+      dbg('passo 1: obtendo o plugin');
       const nat = leitorNativo();
+      dbg('passo 2: plugin obtido', nat ? { tipo: typeof nat, temLer: typeof nat.ler } : 'nenhum');
       if (!nat) { dbg('SEM leitor nativo: não está no app Android, ou o app instalado é antigo (sem o plugin)'); return; }
       const url = urlApiSefa(c);
-      dbg('endereço que o app vai consultar', url ? mascara(decodeURIComponent(url)) : 'NENHUM: o QR não é da versão 2 (ou não tem p=); o app não lê sozinho');
+      dbg('passo 3: endereço que o app vai consultar', url ? mascara(decodeURIComponent(url)) : 'NENHUM: o QR não é da versão 2 (ou não tem p=); o app não lê sozinho');
       if (!url) return;
       if (texto.trim()) { dbg('já havia texto colado; não leio de novo'); return; }
       const fim = toast('Lendo a nota no portal da SEFAZ…', { ico: 'receipt', duration: 45000 });
       const t0 = Date.now();
+      dbg('passo 4: chamando o plugin (aguarde até 40 s)');
       try {
         const r = await nat.ler({ url });
         dbg('plugin respondeu em ' + (Date.now() - t0) + ' ms', { caracteres: (r.texto || '').length });
