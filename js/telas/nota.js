@@ -51,7 +51,7 @@ export default async function nota(ctx) {
       try {
         res = await call('nfce.interpretar', { entrada: entrada || 'manual', texto: texto || undefined });
         if (auto && !(res.itens || []).length) return false;
-        map = res.itens.map((i) => (i.produto_sugerido_id ? { produto_id: i.produto_sugerido_id } : { criar: true }));
+        map = res.itens.map((i) => (i.produto_sugerido_id ? { produto_id: i.produto_sugerido_id } : { criar: true, catalogo: i.catalogo || null }));
         passo2();
         return true;
       } catch (x) { err.show(x.message); return false; }
@@ -111,12 +111,12 @@ export default async function nota(ctx) {
       const m = map[k];
       return row({
         title: it.descricao, sub: `${num(it.quantidade, 3)} ${it.unidade.toLowerCase()} × ${money(it.preco_unitario)}`,
-        badges: [m.produto_id ? h('span', { class: 'match is-ok' }, icon('check'), pname(m.produto_id) || 'Produto', it.motivo_sugestao === 'codigo' && m.produto_id === it.produto_sugerido_id ? ' · pelo código' : '') : h('span', { class: 'match is-new' }, icon('plus'), 'Novo produto')],
+        badges: [m.produto_id ? h('span', { class: 'match is-ok' }, icon('check'), pname(m.produto_id) || 'Produto', it.motivo_sugestao === 'codigo' && m.produto_id === it.produto_sugerido_id ? ' · pelo código' : '') : h('span', { class: 'match is-new' }, icon('plus'), m.catalogo ? 'Do catálogo: ' + m.catalogo.nome : 'Novo produto')],
         trail: h('span', { class: 'num' }, money(it.total)),
         onClick: async () => {
-          const v = await pick({ title: it.descricao, value: m.produto_id || '__novo', items: [{ value: '__novo', label: 'Criar novo produto', sub: it.descricao, icon: 'plus' }, ...prods.map((p) => ({ value: p.id, label: p.nome, sub: [p.marca, embalagem(p)].filter(Boolean).join(' · '), icon: 'tag' }))] });
+          const v = await pick({ title: it.descricao, value: m.produto_id || '__novo', items: [{ value: '__novo', label: it.catalogo ? 'Criar “' + it.catalogo.nome + '” (do catálogo)' : 'Criar novo produto', sub: it.catalogo ? 'Com código de barras e dados da base colaborativa' : it.descricao, icon: 'plus' }, ...prods.map((p) => ({ value: p.id, label: p.nome, sub: [p.marca, embalagem(p)].filter(Boolean).join(' · '), icon: 'tag' }))] });
           if (v === undefined) return;
-          map[k] = v === '__novo' ? { criar: true } : { produto_id: v };
+          map[k] = v === '__novo' ? { criar: true, catalogo: it.catalogo || null } : { produto_id: v };
           passo2();
         },
       });
@@ -129,7 +129,7 @@ export default async function nota(ctx) {
       b.disabled = true; b.setAttribute('aria-busy', 'true'); err.show('');
       try {
         const p = { chave: res.chave || undefined, data: res.data, total: res.total, recurso_id: rec, parcelas: isCard() && parc > 1 ? parc : undefined,
-          itens: res.itens.map((i, k) => ({ descricao: i.descricao, codigo: i.codigo, quantidade: i.quantidade, unidade: i.unidade, preco_unitario: i.preco_unitario, total: i.total, ...(map[k].produto_id ? { produto_id: map[k].produto_id } : { criar: { nome: titulo(i.descricao) } }) })) };
+          itens: res.itens.map((i, k) => ({ descricao: i.descricao, codigo: i.codigo, quantidade: i.quantidade, unidade: i.unidade, preco_unitario: i.preco_unitario, total: i.total, ...(map[k].produto_id ? { produto_id: map[k].produto_id } : { criar: map[k].catalogo ? { nome: map[k].catalogo.nome, marca: map[k].catalogo.marca || undefined, gtin: map[k].catalogo.gtin, unidade: map[k].catalogo.unidade, tam_embalagem: map[k].catalogo.tam_embalagem } : { nome: titulo(i.descricao) } }) })) };
         if (res.loja_id) p.loja_id = res.loja_id; else p.loja = { nome: titulo(res.emitente || 'Loja'), cnpj: res.cnpj || undefined, cidade: res.endereco && res.endereco.cidade, uf: res.endereco && res.endereco.uf };
         const r = await call('nfce.importar', p, { rid: uuid() });
         await successBurst(root, 'Nota importada');
