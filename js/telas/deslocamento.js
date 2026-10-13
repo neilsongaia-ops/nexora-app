@@ -105,6 +105,7 @@ export default async function deslocamento(ctx) {
         if (!st.userCoord && r.latitude != null) { st.latitude = r.latitude; st.longitude = r.longitude; st.origem = 'cep:' + r.precisao; drawLoc(); }
         if (!st.endManual) { st.endereco = r.endereco; fe.input.value = r.endereco; }
         const out = [h('span', { class: 'loc-k' }, [r.logradouro, r.bairro, r.cidade && r.uf ? r.cidade + '/' + r.uf : r.cidade].filter(Boolean).join(' · '))];
+        if (r.latitude == null && !st.userCoord) { st.latitude = null; st.longitude = null; st.origem = ''; drawLoc(); out.push(h('span', { class: 'loc-sub' }, 'Não achei este endereço no mapa. Use “Onde estou” (se estiver aí) ou “No mapa” para marcar o local.')); }
         if (r.gps && !r.gps.confere) out.push(h('div', { class: 'field-err', role: 'alert' }, `O GPS está a ${(r.gps.distancia_m / 1000).toFixed(1).replace('.', ',')} km do endereço deste CEP. Confira o CEP e o número.`),
           h('div', { class: 'btn-inline' }, btn('Usar o endereço do CEP', { kind: 'secondary', size: 'sm', onClick: () => { st.userCoord = false; st.latitude = r.latitude; st.longitude = r.longitude; st.origem = 'cep:' + r.precisao; drawLoc(); consultar(); } }),
             btn('Manter o GPS', { kind: 'secondary', size: 'sm', onClick: () => cepInfo.replaceChildren(h('span', { class: 'loc-sub' }, 'Mantido o local do GPS.')) })));
