@@ -1,5 +1,5 @@
 // Início: painel (quanto tenho, onde está, cartões, a pagar/receber, gastos por categoria, série, planejamentos, alertas)
-import { h, money, monthStart, monthEnd, addMonths, HOJE, ls, monthShort, monthLong, relDate, dayLabel, pct } from '../util.js';
+import { h, money, monthStart, monthEnd, addMonths, addDays, diffDays, HOJE, ls, monthShort, monthLong, relDate, dayLabel, pct, dm, dmy } from '../util.js';
 import { icon } from '../icons.js';
 import { load } from '../api.js';
 import { store, can } from '../store.js';
@@ -59,10 +59,16 @@ export default async function inicio(ctx) {
   slot(hero, () => painel(per()), (d) => {
     const v = h('span', { class: 'hero-v num money' });
     countUp(v, d.quanto_tenho);
+    // A pagar / A receber valem até o fim do mês do painel: a data entra no próprio rótulo ("A pagar até 31/10") e a Agenda abre na janela que cobre essa data
+    const ate = (d.periodo && d.periodo.ate) || per().ate;
+    const falta = diffDays(ate, HOJE), janela = falta <= 7 ? 7 : falta <= 30 ? 30 : 90;
+    const ag = '/agenda' + (falta > 0 ? '?dias=' + janela : '');
     const [tP, tR, tC, tL] = [
-      ['A pagar', d.a_pagar, 'out', 'out', '/agenda'], ['A receber', d.a_receber, 'in', 'in', '/agenda'],
+      ['A pagar', d.a_pagar, 'out', 'out', ag, ate], ['A receber', d.a_receber, 'in', 'in', ag, ate],
       ['Comprometido nos cartões', d.comprometido_nos_cartoes, '', 'card', '/contas'], ['Limite disponível', d.limite_disponivel_total, '', 'card', '/contas']];
-    tiles.replaceChildren(...[tP, tR, tC, tL].map(([l, val, tone, ic, to]) => h('a', { class: 'tile', href: '#' + to }, h('span', { class: 'tile-k' }, icon(ic, tone ? 'tone-' + tone : ''), l), h('span', { class: 'tile-v num money' + (tone ? ' tone-' + tone : '') }, money(val)))));
+    tiles.replaceChildren(...[tP, tR, tC, tL].map(([l, val, tone, ic, to, fim]) => h('a', { class: 'tile', href: '#' + to, 'aria-label': fim ? l + ' até ' + dmy(fim) + ': ' + money(val) : null },
+      h('span', { class: 'tile-k' }, icon(ic, tone ? 'tone-' + tone : ''), fim ? h('span', {}, l + ' ', h('span', { class: 'muted num' }, 'até\u00a0' + dm(fim))) : l),
+      h('span', { class: 'tile-v num money' + (tone ? ' tone-' + tone : '') }, money(val)))));
     onde.replaceChildren(...d.onde_esta.map((r) => h('a', { class: 'acct', href: '#/contas/' + r.recurso_id, dataset: { id: r.recurso_id } }, h('span', { class: 'acct-k' }, icon(r.tipo === 'CARTEIRA' ? 'coin' : 'wallet'), h('span', { class: 'truncate' }, r.nome)), h('span', { class: 'acct-v num money' + (r.saldo < 0 ? ' tone-out' : '') }, money(r.saldo)))),
       ...d.cartoes.map((k) => h('a', { class: 'acct acct--card', href: '#/contas/' + k.recurso_id }, h('span', { class: 'acct-k' }, icon('card'), h('span', { class: 'truncate' }, k.nome)),
         h('span', { class: 'acct-v num money' }, money(k.comprometido)), k.limite ? h('span', { class: 'acct-bar', style: { '--p': String(Math.min(1, k.comprometido / k.limite)) } }) : h('span', { class: 'acct-sub' }, 'Sem limite definido'))));

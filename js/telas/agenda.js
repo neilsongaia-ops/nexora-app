@@ -1,5 +1,5 @@
 // Agenda: a pagar / a receber por data, atrasados em destaque, efetivar com um gesto; recorrências
-import { h, money, dmy, relDate, dayLabel, HOJE, addDays, uuid, emit } from '../util.js';
+import { h, money, dmy, dm, relDate, dayLabel, HOJE, addDays, uuid, emit } from '../util.js';
 import { icon } from '../icons.js';
 import { call, load } from '../api.js';
 import { store, can, catNome } from '../store.js';
@@ -16,7 +16,7 @@ const PER = { DIARIA: 'Todo dia', SEMANAL: 'Toda semana', MENSAL: 'Todo mês', A
 
 export default async function agenda(ctx) {
   const { view, setTitle } = ctx;
-  let aba = ctx.query.get('aba') || 'fluxo', tipo = 'TUDO', dias = 30;
+  let aba = ctx.query.get('aba') || 'fluxo', tipo = 'TUDO', dias = [7, 30, 90].includes(Number(ctx.query.get('dias'))) ? Number(ctx.query.get('dias')) : 30;
   setTitle('Agenda');
   const tabs = segmented([{ value: 'fluxo', label: 'A pagar e receber' }, { value: 'rec', label: 'Recorrências' }], { value: aba, aria: 'Seção', onChange: (v) => { aba = v; draw(); } });
   const body = h('div', {});
@@ -46,7 +46,10 @@ export default async function agenda(ctx) {
     };
     try {
       d = await load('relatorios.fluxo', { ate: addDays(HOJE, dias) });
-      tot.replaceChildren(h('div', { class: 'tile' }, h('span', { class: 'tile-k' }, icon('out', 'tone-out'), 'A pagar'), h('span', { class: 'tile-v num tone-out' }, money(d.a_pagar))), h('div', { class: 'tile' }, h('span', { class: 'tile-k' }, icon('in', 'tone-in'), 'A receber'), h('span', { class: 'tile-v num tone-in' }, money(d.a_receber))));
+      // Mesmo padrão do Início: a data final da janela no rótulo ("A pagar até 14/11")
+      const ate = d.ate || addDays(HOJE, dias);
+      const totT = (l, val, tone) => h('div', { class: 'tile', role: 'group', 'aria-label': l + ' até ' + dmy(ate) + ': ' + money(val) }, h('span', { class: 'tile-k' }, icon(tone, 'tone-' + tone), h('span', {}, l + ' ', h('span', { class: 'muted num' }, 'até\u00a0' + dm(ate)))), h('span', { class: 'tile-v num tone-' + tone }, money(val)));
+      tot.replaceChildren(totT('A pagar', d.a_pagar, 'out'), totT('A receber', d.a_receber, 'in'));
       render();
     } catch (e) { list.replaceChildren(errorState(e.message, fluxo)); }
   }
