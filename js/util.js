@@ -1,6 +1,15 @@
 // Utilidades: DOM seguro, formatação pt-BR, datas ISO, armazenamento.
 export const qs = (s, r = document) => r.querySelector(s);
 
+// append/prepend/replaceChildren nativos escrevem a palavra "null" (ou "false") quando um filho é null/false: `cond ? elemento : null`.
+// Aqui eles passam a ignorar esses filhos, como o h() já faz, para esse descuido nunca poluir a tela.
+for (const proto of [Element.prototype, DocumentFragment.prototype]) {
+  for (const m of ['append', 'prepend', 'replaceChildren']) {
+    const nativo = proto[m];
+    proto[m] = function (...filhos) { return nativo.apply(this, filhos.filter((c) => c != null && c !== false)); };
+  }
+}
+
 // h(): cria elementos. Texto sempre via textNode (nunca innerHTML com dado da API).
 // "html" só é aceito para SVG estático do próprio app (icons.js).
 export function h(tag, props, ...kids) {
