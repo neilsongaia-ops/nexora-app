@@ -6,7 +6,7 @@ import { store, can, catNome } from '../store.js';
 import { pick, pickDate } from '../ui/sheet.js';
 import { toast } from '../ui/toast.js';
 import { infinite } from '../ui/gestures.js';
-import { chip, searchBox, skelRows, empty, errorState, btn, iconBtn, TIPO, STATUS } from '../ui/components.js';
+import { chip, searchBox, skelRows, empty, errorState, btn, iconBtn, row, TIPO, STATUS } from '../ui/components.js';
 import { lancRow } from './lancAcoes.js';
 import { categoriaItems, recursoItems } from './lancForm.js';
 
@@ -30,9 +30,11 @@ export default async function lancamentos(ctx) {
   const search = searchBox({ placeholder: 'Buscar lançamentos', value: f.texto, onSearch: (v) => { f.texto = v; reload(); } });
   const chips = h('div', { class: 'chip-row chip-row--scroll', role: 'toolbar', 'aria-label': 'Filtros' });
   const count = h('p', { class: 'list-count', 'aria-live': 'polite' });
+  // Futuros (data depois de hoje) ficam num grupo recolhido no topo: o lançamento efetivado mais recente e os atrasados aparecem logo ao abrir
+  const futBox = h('div', { class: 'list list--grouped', hidden: true });
   const list = h('div', { class: 'list list--grouped' });
   const selBar = h('div', { class: 'selbar', hidden: true, role: 'toolbar', 'aria-label': 'Seleção' });
-  view.append(h('div', { class: 'sticky-tools' }, search, chips), count, list, selBar);
+  view.append(h('div', { class: 'sticky-tools' }, search, chips), count, futBox, list, selBar);
 
   const per = () => (f.periodo === 'pers' ? { label: `${dmy(f.de)} – ${dmy(f.ate)}` } : PERIODOS().find((p) => p.value === f.periodo)) || PERIODOS()[5];
   function drawChips() {
@@ -64,7 +66,7 @@ export default async function lancamentos(ctx) {
     if (!sel.size) return;
     const fut = [...sel.values()].filter((l) => ['PLANEJADO', 'PENDENTE'].includes(l.status));
     const tot = [...sel.values()].reduce((s, l) => s + (TIPO[l.tipo].sign || 0) * l.valor_total, 0);
-    selBar.replaceChildren(iconBtn('x', 'Limpar seleção', () => { sel.clear(); list.querySelectorAll('.is-sel').forEach((e) => e.classList.remove('is-sel')); drawSel(); }),
+    selBar.replaceChildren(iconBtn('x', 'Limpar seleção', () => { sel.clear(); view.querySelectorAll('.is-sel').forEach((e) => e.classList.remove('is-sel')); drawSel(); }),
       h('span', { class: 'selbar-txt' }, h('strong', {}, `${sel.size} selecionado${sel.size > 1 ? 's' : ''}`), h('span', { class: 'num' }, money(tot, { sign: true }))),
       can('editor') && fut.length ? btn(`Efetivar ${fut.length}`, { icon: 'check', onClick: async (e) => {
         const b = e.currentTarget; b.disabled = true;
@@ -74,6 +76,62 @@ export default async function lancamentos(ctx) {
       } }) : null);
   }
 
+  // Recolhe só quando a pessoa não está pedindo os futuros (Situação Planejado/Pendente, "Próximos 30 dias" ou datas só no futuro)
+  const AMANHA = addDays(HOJE, 1);
+  const recolhe = () => !['PLANEJADO', 'PENDENTE'].includes(f.status) && f.periodo !== 'prox' && !(f.periodo === 'pers' && f.de > HOJE) && (!f.ate || f.ate > HOJE);
+  let fut = { total: 0, itens: [] }, futAberto = false, futSeq = 0, nMain = null;
+  const filtrosApi = () => ({ texto: f.texto || undefined, tipo: f.tipo || undefined, status: f.status || undefined, categoria_id: f.categoria_id || undefined, recurso_id: f.recurso_id || undefined });
+  const drawCount = () => {
+    const nF = recolhe() ? fut.total : 0;
+    if (nMain == null) { count.textContent = ''; return; }
+    count.textContent = [nMain ? `${nMain} lançamento${nMain > 1 ? 's' : ''} até hoje` : null, nF ? `${nF} planejado${nF > 1 ? 's' : ''} à frente` : null].filter(Boolean).join(' · ') || '';
+  };
+  function drawFut() {
+    const its = fut.itens;
+    futBox.hidden = !its.length;
+    if (!its.length) { futBox.replaceChildren(); return; }
+    let pagar = 0, receber = 0;
+    its.forEach((l) => { if (!['PLANEJADO', 'PENDENTE'].includes(l.status)) return; if (l.tipo === 'SAIDA') pagar += l.valor_total; else if (l.tipo === 'ENTRADA') receber += l.valor_total; });
+    const prim = its[0].data_evento, ult = its[its.length - 1].data_evento;
+    const quando = prim === ult ? dmy(prim) : `de ${dmy(prim).slice(0, 5)} a ${dmy(ult)}`;
+    const valores = [pagar ? '\u2212' + money(pagar) : null, receber ? '+' + money(receber) : null].filter(Boolean);
+    const head = row({
+      cls: 'fut-head',
+      lead: h('span', { class: 'tipo-ico' }, icon(futAberto ? 'chevU' : 'chevD')),
+      title: `Planejados (${fut.total})`, sub: quando,
+      trail: pagar ? h('span', { class: 'num tone-out' }, valores[0]) : receber ? h('span', { class: 'num tone-in' }, valores[0]) : null,
+      trailSub: pagar && receber ? h('span', { class: 'num tone-in' }, valores[1]) : null,
+      aria: `Planejados à frente: ${fut.total}, ${quando}${pagar ? ', a pagar ' + money(pagar) : ''}${receber ? ', a receber ' + money(receber) : ''}. ${futAberto ? 'Recolher' : 'Mostrar'}`,
+      onClick: () => { futAberto = !futAberto; drawFut(); futBox.querySelector('.fut-head').focus(); },
+    });
+    head.setAttribute('aria-expanded', String(futAberto));
+    head.setAttribute('aria-controls', 'fut-itens');
+    const body = h('div', { id: 'fut-itens', hidden: !futAberto });
+    if (futAberto) {
+      // Do mais próximo para o mais distante: é a ordem de "o que vem a seguir", como na Agenda
+      let dia = null, g = null;
+      its.forEach((l) => {
+        if (l.data_evento !== dia) { dia = l.data_evento; g = h('div', { class: 'day', role: 'group', 'aria-label': dayLabel(dia) }, h('h3', { class: 'day-h is-future' }, dayLabel(dia))); body.append(g); }
+        const el = lancRow(l, { selection }); if (sel.has(l.id)) el.classList.add('is-sel'); g.append(el);
+      });
+      if (fut.total > its.length) body.append(h('div', { class: 'btn-inline' }, btn(`Ver todos os ${fut.total}`, { kind: 'ghost', size: 'sm', icon: 'calendar', onClick: () => { f.status = 'PLANEJADO'; reload(); } })));
+    }
+    futBox.replaceChildren(head, body);
+  }
+  async function loadFut() {
+    const n = ++futSeq;
+    fut = { total: 0, itens: [] };
+    if (!recolhe()) { futBox.hidden = true; futBox.replaceChildren(); return; }
+    futBox.hidden = false; futBox.replaceChildren(skelRows(1));
+    try {
+      const r = await call('lancamentos.listar', { ...filtrosApi(), de: f.de && f.de > AMANHA ? f.de : AMANHA, ate: f.ate || undefined, offset: 0, limite: 200 });
+      if (n !== futSeq) return;
+      fut = { total: r.total, itens: r.itens.slice().reverse() };
+      if (f.texto && fut.total) futAberto = true;            // busca: o que casou nos futuros já aparece
+      drawFut(); drawCount();
+    } catch (e) { if (n === futSeq) futBox.replaceChildren(errorState(e.message, loadFut)); }
+  }
+
   let inf = null;
   function reload() {
     ls.set('nx.filtros', { ...f, recurso_id: query.get('recurso') ? null : f.recurso_id });
@@ -81,14 +139,16 @@ export default async function lancamentos(ctx) {
     sel.clear(); drawSel();
     inf && inf.stop();
     list.replaceChildren();
-    count.textContent = '';
+    count.textContent = ''; nMain = null; futAberto = false;
+    const corta = recolhe();
+    loadFut();
     let lastDay = null, group = null;
     inf = infinite({
       container: list, skeleton: () => skelRows(4),
       load: async (offset, limite) => {
-        const p = { offset, limite, texto: f.texto || undefined, tipo: f.tipo || undefined, status: f.status || undefined, categoria_id: f.categoria_id || undefined, recurso_id: f.recurso_id || undefined, de: f.de || undefined, ate: f.ate || undefined };
+        const p = { offset, limite, ...filtrosApi(), de: f.de || undefined, ate: corta ? HOJE : f.ate || undefined };
         const r = await call('lancamentos.listar', p);
-        if (offset === 0) count.textContent = r.total ? `${r.total} lançamento${r.total > 1 ? 's' : ''}` : '';
+        if (offset === 0) { nMain = corta ? r.total : null; if (corta) drawCount(); else count.textContent = r.total ? `${r.total} lançamento${r.total > 1 ? 's' : ''}` : ''; }
         return r;
       },
       render: (itens) => {
@@ -103,7 +163,7 @@ export default async function lancamentos(ctx) {
           group.append(el);
         }
       },
-      onEmpty: () => list.replaceChildren(empty({ ic: f.texto ? 'search' : 'list', title: f.texto || f.tipo || f.status || f.categoria_id || f.recurso_id || f.periodo !== 'tudo' ? 'Nada com esses filtros' : 'Nenhum lançamento ainda',
+      onEmpty: () => list.replaceChildren(empty({ ic: f.texto ? 'search' : 'list', title: corta && fut.total ? 'Nenhum lançamento até hoje neste período' : f.texto || f.tipo || f.status || f.categoria_id || f.recurso_id || f.periodo !== 'tudo' ? 'Nada com esses filtros' : 'Nenhum lançamento ainda',
         action: f.texto || f.tipo || f.status || f.categoria_id || f.recurso_id || f.periodo !== 'tudo' ? btn('Limpar filtros', { kind: 'secondary', onClick: () => { Object.assign(f, { periodo: 'tudo', de: null, ate: null, tipo: null, status: null, categoria_id: null, recurso_id: null, texto: '' }); search.input.value = ''; reload(); } })
           : can('editor') ? btn('Novo lançamento', { icon: 'plus', onClick: async () => (await import('./lancForm.js')).openLancForm() }) : null })),
       onError: (e, retry) => list.append(errorState(e.message, (ev) => { ev.currentTarget.closest('.empty').remove(); retry(); })),

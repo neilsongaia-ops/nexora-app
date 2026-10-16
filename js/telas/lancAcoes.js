@@ -21,17 +21,19 @@ export function lancSub(l) {
 
 export function lancRow(l, { showDate, selection } = {}) {
   const b = [];
-  if (l.status !== 'EFETIVADO') b.push(statusBadge(l.status));
+  const atrasado = futuro(l) && l.data_evento < HOJE;           // planejado/pendente cuja data passou: pede efetivar ou cancelar
+  if (atrasado) b.push(badge('Atrasado', 'out', 'clock'));
+  else if (l.status !== 'EFETIVADO') b.push(statusBadge(l.status));
   if (l.parcelas_total > 1) b.push(badge(l.parcelas_total + '×', 'neutral', 'card'));
   if (l.origem === 'RECORRENCIA') b.push(h('span', { class: 'mini-ico', title: 'Recorrente', 'aria-label': 'Recorrente' }, icon('repeat')));
   if (l.origem === 'ESTORNO') b.push(badge('Estorno', 'muted', 'undo'));
   if (l.nota_pendente) b.push(badge('Itens pendentes', 'muted', 'receipt'));
   const dead = l.status === 'CANCELADO' || l.status === 'ESTORNADO';
   const r = row({
-    cls: 'lanc' + (dead ? ' is-dead' : '') + (l.status === 'PENDENTE' && l.data_evento < HOJE ? ' is-late' : ''),
+    cls: 'lanc' + (dead ? ' is-dead' : '') + (atrasado ? ' is-late' : ''),
     lead: tipoIcon(l.tipo), title: l.descricao, badges: b.length ? b : null, sub: lancSub(l),
     trail: amount(l.valor_total, { tipo: l.tipo, strike: dead }), trailSub: showDate ? relDate(l.data_evento) : null,
-    aria: `${TIPO[l.tipo].label}: ${l.descricao}, ${money(l.valor_total)}, ${dmy(l.data_evento)}`,
+    aria: `${TIPO[l.tipo].label}: ${l.descricao}, ${money(l.valor_total)}, ${dmy(l.data_evento)}${atrasado ? ', atrasado' : ''}`,
     onClick: () => (selection && selection.active() ? selection.toggle(l, r) : openLancMenu(l)),
   });
   if (selection) longPress(r, () => selection.toggle(l, r));
