@@ -904,8 +904,8 @@ function interpretar(S, entrada, texto) {
   const pq = String(entrada || '').match(/[?&]p=([^&#\s]+)/i);
   if (contingencia && pq) {
     const ps = decodeURIComponent(pq[1]).split('|');
-    const dia = ps[3], val = Number(ps[4]);
-    if (/^\d{1,2}$/.test(dia || '') && val > 0) qr = { contingencia: true, data: '20' + chave.slice(2, 4) + '-' + chave.slice(4, 6) + '-' + String(dia).padStart(2, '0'), total: r2(val) };
+    const dia = ps[3], bruto = String(ps[4] || '').trim(), semSep = /^\d+$/.test(bruto), val = semSep ? Number(bruto) / 100 : Number(bruto.replace(',', '.'));      // sem separador = centavos ("10489" = 104,89)
+    if (/^\d{1,2}$/.test(dia || '') && val > 0) qr = { contingencia: true, data: '20' + chave.slice(2, 4) + '-' + chave.slice(4, 6) + '-' + String(dia).padStart(2, '0'), total: r2(val), valor_conferir: semSep, valor_original: bruto };
   }
   const notaValida = (n) => { const l = S.lancamentos.find((x) => x.id === n.lancamento_id); return l && !['ESTORNADO', 'CANCELADO'].includes(l.status); };
   const nProv = chave && S.notas.find((n) => n.chave === chave && n.provisoria && notaValida(n));
@@ -926,11 +926,11 @@ function interpretar(S, entrada, texto) {
     data: dataN, total, endereco: end.length >= 2 ? { cidade: end[end.length - 2].replace(/^./, (c) => c.toUpperCase()).toLowerCase().replace(/^./, (c) => c.toUpperCase()), uf: end[end.length - 1] } : null, itens, avisos };
 }
 /** QR de uma nota em contingência (35º dígito 9) com dia e valor, para a demonstração. */
-export function amostraContingencia() {
+export function amostraContingencia(centavos) {
   const aamm = T.slice(2, 4) + T.slice(5, 7), dia = T.slice(8, 10);
   const base = '15' + aamm + '11222333000144' + '65' + '003' + '000045871' + '9' + '20261014';
   const chave = base + dv11(base);
-  return 'https://nfce.exemplo.gov.br/consulta?p=' + chave + '|2|1|' + dia + '|14.99|ABCDEF|1|HASH';
+  return 'https://nfce.exemplo.gov.br/consulta?p=' + chave + '|2|1|' + dia + '|' + (centavos ? '10489' : '14.99') + '|ABCDEF|1|HASH';
 }
 export function amostraNota() {
   const cnpj = '11222333000181', base = '15' + T.slice(2, 4) + T.slice(5, 7) + cnpj + '65' + '501' + '000' + String(470000 + Math.floor(Math.random() * 9999)).padStart(6, '0') + '1' + '04857917';

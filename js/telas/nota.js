@@ -6,7 +6,7 @@ import { store, can, recursosAtivos } from '../store.js';
 import { pick, openSheet } from '../ui/sheet.js';
 import { toast, successBurst } from '../ui/toast.js';
 import { scanCode, pdfText, pickFile } from '../ui/media.js';
-import { card, row, badge, empty, errorState, btn, textField, pickField, stepper, formError, sectionHead, chip, kv, tip } from '../ui/components.js';
+import { card, row, badge, empty, errorState, btn, textField, pickField, stepper, formError, sectionHead, chip, kv, tip, moneyField } from '../ui/components.js';
 import { recursoItems, categoriaItems } from './lancForm.js';
 
 // No app Android (Capacitor) o celular consulta o portal da SEFAZ por um WebView do próprio aparelho: o servidor do Apps Script é bloqueado, o celular não.
@@ -114,7 +114,7 @@ export default async function nota(ctx) {
 
     root.replaceChildren(steps(1), completar ? aviso1('', 'receipt', 'Para completar a compra com os itens, leia de novo o QR da mesma nota.') : '', err, ler, aviso, manualBox,
       DEMO ? h('div', { class: 'chip-row' }, chip('Usar nota de exemplo', { ic: 'receipt', onClick: async () => { const a = (await import('../demo.js')).amostraNota(); entrada = a.entrada; texto = a.texto; txt.input.value = texto; manualBox.hidden = false; } }),
-        chip('Nota em contingência', { ic: 'clock', onClick: async () => { entrada = (await import('../demo.js')).amostraContingencia(); texto = ''; await interpretar(true); } })) : '');
+        chip('Nota em contingência', { ic: 'clock', onClick: async () => { entrada = (await import('../demo.js')).amostraContingencia(new URLSearchParams(location.search).has('centavos')); texto = ''; await interpretar(true); } })) : '');
   }
 
   async function passo2() {
@@ -173,7 +173,8 @@ export default async function nota(ctx) {
   // Nota em contingência: a SEFAZ ainda não tem os itens; o QR dá loja, dia e valor. Lança só pelo valor e completa depois.
   function passoParcial() {
     const err = formError();
-    const q = res.qr || {}, data = q.data || res.data, total = q.total != null ? q.total : res.total;
+    const q = res.qr || {}, data = q.data || res.data;
+    let total = q.total != null ? q.total : res.total;
     const sug = !res.loja_id ? res.emitente_sugerido : null;
     const loja = (store.lojas && res.loja_id && (store.lojas.get ? store.lojas.get(res.loja_id) : null)) || null;
     const nome = titulo(res.emitente || (sug && sug.nome) || (loja && loja.nome) || 'Loja');
@@ -184,6 +185,8 @@ export default async function nota(ctx) {
         sug ? badge('Dados oficiais (Receita)', 'in', 'verified') : null, sug && sug.ativa === false ? badge('CNPJ não ativo', 'out', 'alert') : null),
       h('div', { class: 'kv-list' }, kv('Total', money(total), 'is-total')));
     const head = aviso1('', 'clock', 'A loja emitiu esta nota em contingência: os itens aparecem quando ela for autorizada.');
+    // Alguns emissores mandam o valor do QR em centavos, sem vírgula ("10489" = R$ 104,89): o servidor lê assim e a pessoa confere/corrige aqui
+    const conferir = q.valor_conferir ? aviso1('', 'alert', 'O QR desta nota veio sem vírgula (“' + q.valor_original + '”). Entendemos ' + money(total) + '. Confira com o comprovante e corrija abaixo, se preciso.') : '';
     if (res.provisoria) {
       root.replaceChildren(steps(2), head, resumo,
         aviso1('is-ok', 'check', 'Esta compra já foi lançada só pelo valor' + (res.provisoria.data ? ' em ' + dmy(res.provisoria.data) : '') + '. Leia o QR de novo mais tarde para completar com os itens.'),
@@ -193,6 +196,7 @@ export default async function nota(ctx) {
     const isCard = () => (store.recs.get(rec) || {}).tipo === 'CARTAO';
     const parcWrap = h('div', { class: 'field', hidden: !isCard() }, h('span', { class: 'field-label' }, 'Parcelas'), stepper({ value: parc, min: 1, max: 12, format: (v) => v + '×', label: 'Parcelas', onChange: (v) => { parc = v; } }));
     const b = btn('Lançar só pelo valor', { size: 'lg', full: true, icon: 'check', disabled: !(total > 0) });
+    const campoValor = q.valor_conferir ? moneyField('Valor da compra', { value: total, onChange: (v) => { total = v; b.disabled = !(total > 0); } }) : '';
     b.onclick = async () => {
       if (!rec) { err.show('Escolha como pagou.'); return; }
       b.disabled = true; b.setAttribute('aria-busy', 'true'); err.show('');
@@ -210,7 +214,7 @@ export default async function nota(ctx) {
       } catch (x) { err.show(x.message); b.disabled = false; } finally { b.removeAttribute('aria-busy'); }
     };
     const rid = uuid();
-    root.replaceChildren(steps(2), head, err, avisoDuplicadas() || '', resumo,
+    root.replaceChildren(steps(2), head, conferir, err, avisoDuplicadas() || '', resumo, campoValor,
       pickField('Pagou com', { value: rec, items: () => recursoItems(), onChange: (v) => { rec = v; parcWrap.hidden = !isCard(); } }), parcWrap,
       pickField('Categoria', { value: cat, placeholder: 'Opcional', items: () => categoriaItems('DESPESA'), onChange: (v) => { cat = v; } }),
       h('p', { class: 'sheet-note' }, 'Depois dá para completar com os itens, lendo o mesmo QR.'),
