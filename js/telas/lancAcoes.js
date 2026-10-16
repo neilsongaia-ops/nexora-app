@@ -25,6 +25,7 @@ export function lancRow(l, { showDate, selection } = {}) {
   if (l.parcelas_total > 1) b.push(badge(l.parcelas_total + '×', 'neutral', 'card'));
   if (l.origem === 'RECORRENCIA') b.push(h('span', { class: 'mini-ico', title: 'Recorrente', 'aria-label': 'Recorrente' }, icon('repeat')));
   if (l.origem === 'ESTORNO') b.push(badge('Estorno', 'muted', 'undo'));
+  if (l.nota_pendente) b.push(badge('Itens pendentes', 'muted', 'receipt'));
   const dead = l.status === 'CANCELADO' || l.status === 'ESTORNADO';
   const r = row({
     cls: 'lanc' + (dead ? ' is-dead' : '') + (l.status === 'PENDENTE' && l.data_evento < HOJE ? ' is-late' : ''),
@@ -120,7 +121,7 @@ export async function openLancDetail(id) {
     const ed = can('editor');
     const head = h('div', { class: 'det-head' }, tipoIcon(d.tipo, 'is-xl'), h('div', { class: 'det-head-txt' }, h('h3', { class: 'det-title' }, d.descricao),
       amount(d.valor_total, { tipo: d.tipo, cls: 'is-2xl', strike: ['CANCELADO', 'ESTORNADO'].includes(d.status) }),
-      h('div', { class: 'det-badges' }, statusBadge(d.status), d.tipo === 'TRANSFERENCIA' ? badge(d.origem === 'PAGAMENTO_FATURA' ? 'Pagamento de fatura' : 'Não é receita nem despesa', 'xfer', 'swap') : null, d.origem === 'ESTORNO' ? badge('Estorno', 'muted', 'undo') : null, d.origem === 'RECORRENCIA' ? badge('Recorrente', 'neutral', 'repeat') : null, d.cobranca_banco ? badge('Cobrança do banco', 'neutral', 'receipt') : null)));
+      h('div', { class: 'det-badges' }, statusBadge(d.status), d.tipo === 'TRANSFERENCIA' ? badge(d.origem === 'PAGAMENTO_FATURA' ? 'Pagamento de fatura' : 'Não é receita nem despesa', 'xfer', 'swap') : null, d.origem === 'ESTORNO' ? badge('Estorno', 'muted', 'undo') : null, d.origem === 'RECORRENCIA' ? badge('Recorrente', 'neutral', 'repeat') : null, d.cobranca_banco ? badge('Cobrança do banco', 'neutral', 'receipt') : null, d.nota_pendente ? badge('Itens pendentes', 'muted', 'receipt') : null)));
     const info = h('div', { class: 'kv-list' },
       kv('Data', dmy(d.data_evento) + ' · ' + relDate(d.data_evento)),
       d.recurso_id ? kv(d.tipo === 'ENTRADA' ? 'Recebido em' : 'Pago com', recNome(d.recurso_id)) : null,
@@ -148,6 +149,7 @@ export async function openLancDetail(id) {
     s.setTitle(TIPO[d.tipo].label);
     s.setContent([head, info, brk, itens, parcelas, mov, exec]);
     const acts = [];
+    if (ed && d.nota_pendente && d.status === 'EFETIVADO') acts.push(btn('Completar com a nota', { icon: 'receipt', onClick: async () => { await s.close(); location.hash = '#/nota?completar=' + encodeURIComponent(d.nota_pendente); } }));
     if (ed && futuro(d)) acts.push(btn('Efetivar', { icon: 'check', onClick: async () => { await s.close(); efetivar(d); } }));
     if (ed && !['CANCELADO', 'ESTORNADO'].includes(d.status) && d.origem !== 'PAGAMENTO_FATURA') acts.push(btn('Editar', { kind: 'secondary', icon: 'edit', onClick: async () => { await s.close(); openLancForm({ edit: d }); } }));
     acts.push(btn('', { kind: 'secondary', icon: 'dots', aria: 'Mais ações', onClick: () => openLancMenu(d) }));

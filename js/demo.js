@@ -205,6 +205,8 @@ const findL = (S, id) => S.lancamentos.find((l) => l.id === id) || fail('Lançam
 function viewL(S, l, full = false) {
   const v = clone(l);
   v.movimentacoes = l.movimentacoes.map((m) => ({ recurso_id: m.recurso_id, natureza: m.natureza, valor: m.valor, data_efetivacao: m.data_efetivacao }));
+  const np = l.status === 'EFETIVADO' && (S.notas || []).find((n) => n.provisoria && n.lancamento_id === l.id);
+  v.nota_pendente = np ? np.chave : null;
   if (full) v.execucoes = execucoes(S, l);
   return v;
 }
@@ -896,11 +898,39 @@ function interpretar(S, entrada, texto) {
     S.produtos.forEach((p) => { const pn = norm(p.nome + ' ' + (p.marca || '')); const sc = w.filter((t) => pn.includes(t)).length; if (sc > bs) { bs = sc; b = p; } });
     if (b && bs >= 2) { it.produto_sugerido_id = b.id; it.motivo_sugestao = 'nome'; }
   });
+  // Nota em contingência (35º dígito da chave ≠ 1): o QR traz o dia e o valor; sem texto, devolve só isso (parcial)
+  const contingencia = !!(chave && chave[34] !== '1');
+  let qr = null;
+  const pq = String(entrada || '').match(/[?&]p=([^&#\s]+)/i);
+  if (contingencia && pq) {
+    const ps = decodeURIComponent(pq[1]).split('|');
+    const dia = ps[3], val = Number(ps[4]);
+    if (/^\d{1,2}$/.test(dia || '') && val > 0) qr = { contingencia: true, data: '20' + chave.slice(2, 4) + '-' + chave.slice(4, 6) + '-' + String(dia).padStart(2, '0'), total: r2(val) };
+  }
+  const notaValida = (n) => { const l = S.lancamentos.find((x) => x.id === n.lancamento_id); return l && !['ESTORNADO', 'CANCELADO'].includes(l.status); };
+  const nProv = chave && S.notas.find((n) => n.chave === chave && n.provisoria && notaValida(n));
+  const provisoria = nProv ? (() => { const l = S.lancamentos.find((x) => x.id === nProv.lancamento_id); return { lancamento_id: l.id, data: l.data_evento, total: l.valor_total }; })() : null;
+  const duplicada = !!(chave && S.notas.some((n) => n.chave === chave && !n.provisoria && notaValida(n)));
+  const dupl = (data, total) => (data && total ? S.lancamentos.filter((l) => l.tipo === 'SAIDA' && l.origem === 'MANUAL' && !['ESTORNADO', 'CANCELADO'].includes(l.status) && Math.abs(l.valor_total - total) < 0.005
+    && Math.abs((new Date(l.data_evento) - new Date(data)) / 864e5) <= 1 && !(provisoria && l.id === provisoria.lancamento_id) && !S.notas.some((n) => n.lancamento_id === l.id)).map((l) => ({ id: l.id, descricao: l.descricao, data_evento: l.data_evento, valor_total: l.valor_total })) : []);
+  if (qr && !tx.trim()) {
+    const sug = loja ? null : { nome: 'Drogaria Exemplo', razao_social: 'Drogaria Exemplo Ltda', cidade: 'Belém', uf: 'PA', ativa: true };
+    return { chave, chave_info: info, cnpj, duplicada: false, loja_id: loja ? loja.id : null, emitente: loja ? loja.nome : null, data: qr.data, total: qr.total, endereco: null, itens: [],
+      avisos: ['A SEFAZ só mostra os itens desta nota depois que a loja transmitir e ela for autorizada.'], contingencia: true, parcial: true, qr, emitente_sugerido: sug, provisoria, possiveis_duplicadas: dupl(qr.data, qr.total) };
+  }
   if (!chave) avisos.push('Sem a chave de acesso, os preços entram como não verificados.');
   if (!itens.length) avisos.push(tx ? 'Não foi possível reconhecer os itens neste texto.' : 'Copie o texto da página da nota (ou envie o PDF) para ler os itens.');
   const total = totM ? brNum(totM[1]) : r2(itens.reduce((s, i) => s + i.total, 0));
-  return { chave, chave_info: info, cnpj, duplicada: !!(chave && S.notas.some((n) => n.chave === chave)), loja_id: loja ? loja.id : null, emitente,
-    data: dataM ? `${dataM[3]}-${dataM[2]}-${dataM[1]}` : null, total, endereco: end.length >= 2 ? { cidade: end[end.length - 2].replace(/^./, (c) => c.toUpperCase()).toLowerCase().replace(/^./, (c) => c.toUpperCase()), uf: end[end.length - 1] } : null, itens, avisos };
+  const dataN = dataM ? `${dataM[3]}-${dataM[2]}-${dataM[1]}` : null;
+  return { chave, chave_info: info, cnpj, duplicada, loja_id: loja ? loja.id : null, emitente, contingencia, parcial: false, qr, emitente_sugerido: null, provisoria, possiveis_duplicadas: dupl(dataN, total),
+    data: dataN, total, endereco: end.length >= 2 ? { cidade: end[end.length - 2].replace(/^./, (c) => c.toUpperCase()).toLowerCase().replace(/^./, (c) => c.toUpperCase()), uf: end[end.length - 1] } : null, itens, avisos };
+}
+/** QR de uma nota em contingência (35º dígito 9) com dia e valor, para a demonstração. */
+export function amostraContingencia() {
+  const aamm = T.slice(2, 4) + T.slice(5, 7), dia = T.slice(8, 10);
+  const base = '15' + aamm + '11222333000144' + '65' + '003' + '000045871' + '9' + '20261014';
+  const chave = base + dv11(base);
+  return 'https://nfce.exemplo.gov.br/consulta?p=' + chave + '|2|1|' + dia + '|14.99|ABCDEF|1|HASH';
 }
 export function amostraNota() {
   const cnpj = '11222333000181', base = '15' + T.slice(2, 4) + T.slice(5, 7) + cnpj + '65' + '501' + '000' + String(470000 + Math.floor(Math.random() * 9999)).padStart(6, '0') + '1' + '04857917';
@@ -1574,11 +1604,23 @@ const R = {
   'comparacao.lista': (p, { S }) => comparar(S, p),
   'nfce.interpretar': ({ entrada, texto }, { S }) => interpretar(S, entrada, texto),
   'nfce.importar': (p, { S }) => {
-    if (p.chave && S.notas.some((n) => n.chave === p.chave)) fail('Não é possível importar: esta nota já foi importada.');
-    if (!p.itens || !p.itens.length) fail('A nota não tem itens.');
+    const vale = (n) => { const l = S.lancamentos.find((x) => x.id === n.lancamento_id); return l && !['ESTORNADO', 'CANCELADO'].includes(l.status); };
+    if (p.chave && S.notas.some((n) => n.chave === p.chave && !n.provisoria && vale(n))) fail('Não é possível importar: esta nota já foi importada.');
+    const prov = p.chave && S.notas.find((n) => n.chave === p.chave && n.provisoria && vale(n));
+    if (p.provisoria && prov) fail('Esta compra já foi lançada só pelo valor.');
+    if (!p.provisoria && (!p.itens || !p.itens.length)) fail('A nota não tem itens.');
     let loja = p.loja_id && lojaOf(S, p.loja_id);
     if (!loja && p.loja) { const c = (p.loja.cnpj || '').replace(/\D/g, ''); loja = (c && S.lojas.find((l) => l.cnpj === c)) || R['lojas.salvar']({ nome: p.loja.nome || 'Loja', cnpj: c, cidade: p.loja.cidade, uf: p.loja.uf }, { S }); }
     if (!loja) fail('Informe a loja.');
+    if (p.provisoria) {
+      if (!p.chave) fail('Informe a chave da nota.');
+      if (!(Number(p.total) > 0)) fail('Informe o valor da compra.');
+      const l = criarLanc(S, { tipo: 'SAIDA', descricao: loja.nome, valor_bruto: r2(p.total), data_evento: p.data || T, recurso_id: p.recurso_id, parcelas: p.parcelas, categoria_id: p.categoria_id || 'c_merc', status: 'EFETIVADO' });
+      chequeConferir(S, l);
+      const nota = { id: nid('nf'), chave: p.chave, lancamento_id: l.id, provisoria: true }; S.notas.push(nota);
+      return { lancamento: viewL(S, l, true), nota_id: nota.id, loja_id: loja.id, provisoria: true, avisos: [] };
+    }
+    if (prov) { estornar(S, S.lancamentos.find((x) => x.id === prov.lancamento_id), 'Completado com os itens da nota fiscal', T); S.notas.splice(S.notas.indexOf(prov), 1); }
     const itens = p.itens.map((i) => {
       let pid = i.produto_id && prodOf(S, i.produto_id) ? i.produto_id : null;
       if (!pid && i.criar) pid = R['produtos.salvar']({ nome: i.criar.nome || i.descricao, gtin: i.criar.gtin, categoria_id: i.criar.categoria_id, unidade: i.unidade }, { S }).id;

@@ -7,7 +7,7 @@ import { pick, openSheet } from '../ui/sheet.js';
 import { toast, successBurst } from '../ui/toast.js';
 import { scanCode, pdfText, pickFile } from '../ui/media.js';
 import { card, row, badge, empty, errorState, btn, textField, pickField, stepper, formError, sectionHead, chip, kv, tip } from '../ui/components.js';
-import { recursoItems } from './lancForm.js';
+import { recursoItems, categoriaItems } from './lancForm.js';
 
 // No app Android (Capacitor) o celular consulta o portal da SEFAZ por um WebView do próprio aparelho: o servidor do Apps Script é bloqueado, o celular não.
 // Com a interface carregada de um site remoto o Capacitor injeta um objeto enxuto (sem registerPlugin): tenta os 3 caminhos possíveis.
@@ -43,7 +43,12 @@ export default async function nota(ctx) {
   const { view, setTitle } = ctx;
   setTitle('Nota fiscal');
   if (!can('editor')) { view.append(empty({ ic: 'lock', title: 'Seu papel neste espaço é só de leitura.' })); return; }
-  let entrada = '', texto = '', pdfNome = '', res = null, map = [], rec = (recursosAtivos(['CARTAO'])[0] || recursosAtivos()[0] || {}).id, parc = 1;
+  let entrada = '', texto = '', pdfNome = '', res = null, map = [], rec = (recursosAtivos(['CARTAO'])[0] || recursosAtivos()[0] || {}).id, parc = 1, cat = null;
+  const completar = ctx.query && ctx.query.get('completar');      // veio de "Completar com a nota" (lançamento feito só pelo valor)
+  const verLancId = async (id) => (await import('./lancAcoes.js')).openLancDetail(id);
+  const aviso1 = (cls, ic, txt, ...extra) => h('div', { class: 'warn-item' + (cls ? ' ' + cls : ''), role: cls === 'is-danger' ? 'alert' : 'status' }, icon(ic), extra.length ? h('div', { class: 'warn-body' }, h('span', {}, txt), ...extra) : h('span', {}, txt));
+  // Lançamentos manuais de mesmo valor perto da data: mesmo aviso nos dois caminhos (nota completa ou só pelo valor)
+  const avisoDuplicadas = () => (res.possiveis_duplicadas || []).length ? aviso1('', 'alert', 'Talvez esta compra já esteja lançada:', h('ul', { class: 'warn-list' }, res.possiveis_duplicadas.map((x) => h('li', {}, [x.descricao, x.data_evento ? dmy(x.data_evento) : null, money(x.valor_total != null ? x.valor_total : x.valor)].filter(Boolean).join(', '))))) : null;
   const root = h('div', { class: 'sec' });
   view.append(root);
   const steps = (n) => h('div', { class: 'steps', 'aria-label': `Etapa ${n} de 2` }, h('span', { class: 'step is-on' }), h('span', { class: 'step' + (n > 1 ? ' is-on' : '') }));
@@ -62,6 +67,7 @@ export default async function nota(ctx) {
       err.show('');
       try {
         res = await call('nfce.interpretar', { entrada: entrada || 'manual', texto: texto || undefined });
+        if (res.parcial && !(res.itens || []).length) { passoParcial(); return true; }
         if (auto && !(res.itens || []).length) return false;
         map = res.itens.map((i) => (i.produto_sugerido_id ? { produto_id: i.produto_sugerido_id } : { criar: true, catalogo: i.catalogo || null }));
         passo2();
@@ -75,7 +81,7 @@ export default async function nota(ctx) {
       if (!c) return;
       entrada = c; err.show(''); dizer('');
       const url = nat ? urlApiSefa(c) : '';
-      if (!url) { revelar('Cole o texto da nota ou envie o PDF.'); return; }
+      if (!url) { texto = ''; if (!(await interpretar(true))) revelar('Cole o texto da nota ou envie o PDF.'); return; }
       ler.disabled = true; ler.setAttribute('aria-busy', 'true');
       const fim = toast('Lendo a nota no portal da SEFAZ…', { ico: 'receipt', duration: 45000 });
       try {
@@ -84,6 +90,7 @@ export default async function nota(ctx) {
         if (!(await interpretar(true))) revelar('Não consegui reconhecer os itens da nota. Cole o texto ou envie o PDF.');
       } catch (x) {
         fim();
+        texto = ''; if (await interpretar(true)) return;          // nota em contingência: o QR já basta para lançar só pelo valor
         revelar(x && x.code === 'CAPTCHA' ? 'O portal pediu verificação. Abra a nota no navegador e cole o texto aqui, ou envie o PDF.' : 'Não consegui ler a nota automaticamente. Cole o texto ou envie o PDF.');
       } finally { ler.disabled = false; ler.removeAttribute('aria-busy'); }
     }
@@ -105,8 +112,9 @@ export default async function nota(ctx) {
     };
     const manualBox = h('div', { class: 'sec', hidden: !!nat }, txt, h('div', { class: 'src-grid' }, colar, pdf), lerTexto);
 
-    root.replaceChildren(steps(1), err, ler, aviso, manualBox,
-      DEMO ? chip('Usar nota de exemplo', { ic: 'receipt', onClick: async () => { const a = (await import('../demo.js')).amostraNota(); entrada = a.entrada; texto = a.texto; txt.input.value = texto; manualBox.hidden = false; } }) : null);
+    root.replaceChildren(steps(1), completar ? aviso1('', 'receipt', 'Para completar a compra com os itens, leia de novo o QR da mesma nota.') : '', err, ler, aviso, manualBox,
+      DEMO ? h('div', { class: 'chip-row' }, chip('Usar nota de exemplo', { ic: 'receipt', onClick: async () => { const a = (await import('../demo.js')).amostraNota(); entrada = a.entrada; texto = a.texto; txt.input.value = texto; manualBox.hidden = false; } }),
+        chip('Nota em contingência', { ic: 'clock', onClick: async () => { entrada = (await import('../demo.js')).amostraContingencia(); texto = ''; await interpretar(true); } })) : '');
   }
 
   async function passo2() {
@@ -118,6 +126,8 @@ export default async function nota(ctx) {
     const warns = [];
     if (res.duplicada) warns.push(h('div', { class: 'warn-item is-danger', role: 'alert' }, icon('alert'), h('span', {}, 'Não é possível importar: esta nota já foi importada' + (res.importada_em ? ' em ' + dmy(res.importada_em) : '') + '.')));
     res.avisos.filter((a) => !(res.duplicada && /já foi importada/.test(a))).forEach((a) => warns.push(h('div', { class: 'warn-item' }, icon('alert'), h('span', {}, a))));
+    if (res.provisoria) warns.push(aviso1('', 'swap', 'Ao importar, o lançamento feito só pelo valor (' + money(res.provisoria.total) + ', ' + dmy(res.provisoria.data) + ') será estornado e trocado por este, com os itens.'));
+    else if (avisoDuplicadas()) warns.push(avisoDuplicadas());
     const soma = res.itens.reduce((s, i) => s + i.total, 0), desc = Math.max(0, soma - res.total);
     const itens = h('div', { class: 'list' }, res.itens.map((it, k) => {
       const m = map[k];
@@ -158,6 +168,52 @@ export default async function nota(ctx) {
         h('div', { class: 'kv-list' }, kv('Itens', String(res.itens.length)), desc > 0.009 ? kv('Descontos', money(-desc)) : null, kv('Total', money(res.total), 'is-total'))),
       sectionHead('Itens'), itens,
       pickField('Pagou com', { value: rec, items: () => recursoItems(), onChange: (v) => { rec = v; parcWrap.hidden = !isCard(); } }), parcWrap,
+      h('div', { class: 'btn-col' }, b, btn('Voltar', { kind: 'ghost', icon: 'chevL', onClick: passo1 })));
+  }
+  // Nota em contingência: a SEFAZ ainda não tem os itens; o QR dá loja, dia e valor. Lança só pelo valor e completa depois.
+  function passoParcial() {
+    const err = formError();
+    const q = res.qr || {}, data = q.data || res.data, total = q.total != null ? q.total : res.total;
+    const sug = !res.loja_id ? res.emitente_sugerido : null;
+    const loja = (store.lojas && res.loja_id && (store.lojas.get ? store.lojas.get(res.loja_id) : null)) || null;
+    const nome = titulo(res.emitente || (sug && sug.nome) || (loja && loja.nome) || 'Loja');
+    const cid = (sug && sug.cidade) || (res.endereco && res.endereco.cidade);
+    const uf = (sug && sug.uf) || (res.endereco && res.endereco.uf);
+    const resumo = card('note-head', h('span', { class: 'note-em' }, nome),
+      h('div', { class: 'note-meta' }, data ? h('span', {}, dmy(data)) : null, cid ? h('span', {}, cid + (uf ? '/' + uf : '')) : null,
+        sug ? badge('Dados oficiais (Receita)', 'in', 'verified') : null, sug && sug.ativa === false ? badge('CNPJ não ativo', 'out', 'alert') : null),
+      h('div', { class: 'kv-list' }, kv('Total', money(total), 'is-total')));
+    const head = aviso1('', 'clock', 'A loja emitiu esta nota em contingência: os itens aparecem quando ela for autorizada.');
+    if (res.provisoria) {
+      root.replaceChildren(steps(2), head, resumo,
+        aviso1('is-ok', 'check', 'Esta compra já foi lançada só pelo valor' + (res.provisoria.data ? ' em ' + dmy(res.provisoria.data) : '') + '. Leia o QR de novo mais tarde para completar com os itens.'),
+        h('div', { class: 'btn-col' }, btn('Ver lançamento', { size: 'lg', full: true, icon: 'receipt', onClick: () => verLancId(res.provisoria.lancamento_id) }), btn('Voltar', { kind: 'ghost', icon: 'chevL', onClick: passo1 })));
+      return;
+    }
+    const isCard = () => (store.recs.get(rec) || {}).tipo === 'CARTAO';
+    const parcWrap = h('div', { class: 'field', hidden: !isCard() }, h('span', { class: 'field-label' }, 'Parcelas'), stepper({ value: parc, min: 1, max: 12, format: (v) => v + '×', label: 'Parcelas', onChange: (v) => { parc = v; } }));
+    const b = btn('Lançar só pelo valor', { size: 'lg', full: true, icon: 'check', disabled: !(total > 0) });
+    b.onclick = async () => {
+      if (!rec) { err.show('Escolha como pagou.'); return; }
+      b.disabled = true; b.setAttribute('aria-busy', 'true'); err.show('');
+      try {
+        const p = { provisoria: true, chave: res.chave, data, total, recurso_id: rec, categoria_id: cat || undefined, parcelas: isCard() && parc > 1 ? parc : undefined };
+        if (res.loja_id) p.loja_id = res.loja_id; else p.loja = { nome, cnpj: res.cnpj || undefined };
+        const r = await call('nfce.importar', p, { rid });
+        await successBurst(root, 'Compra lançada');
+        emit('dados');
+        root.replaceChildren(steps(2), resumo,
+          aviso1('is-ok', 'check', 'Compra lançada só pelo valor.'),
+          h('p', { class: 'sheet-note' }, 'Quando a nota for autorizada, abra o lançamento e toque em “Completar com a nota”.'),
+          h('div', { class: 'btn-col' }, btn('Ver lançamento', { size: 'lg', full: true, icon: 'receipt', onClick: () => verLancId(r.lancamento.id) }),
+            btn('Ler outra nota', { kind: 'ghost', icon: 'camera', onClick: () => { entrada = texto = ''; res = null; passo1(); } })));
+      } catch (x) { err.show(x.message); b.disabled = false; } finally { b.removeAttribute('aria-busy'); }
+    };
+    const rid = uuid();
+    root.replaceChildren(steps(2), head, err, avisoDuplicadas() || '', resumo,
+      pickField('Pagou com', { value: rec, items: () => recursoItems(), onChange: (v) => { rec = v; parcWrap.hidden = !isCard(); } }), parcWrap,
+      pickField('Categoria', { value: cat, placeholder: 'Opcional', items: () => categoriaItems('DESPESA'), onChange: (v) => { cat = v; } }),
+      h('p', { class: 'sheet-note' }, 'Depois dá para completar com os itens, lendo o mesmo QR.'),
       h('div', { class: 'btn-col' }, b, btn('Voltar', { kind: 'ghost', icon: 'chevL', onClick: passo1 })));
   }
   passo1();
