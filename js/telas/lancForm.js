@@ -17,19 +17,27 @@ export function recursoItems({ semCartao, soCartao } = {}) {
 /** Atalho do seletor de categoria: cria a categoria sem sair do lançamento e devolve a nova (ou null se desistir). */
 export function novaCategoria(tipo, depois) {
   if (!can('editor')) { toast('Seu papel neste espaço é só de leitura.', { ico: 'lock' }); return; }
+  const rec = tipo === 'RECEITA';
   let nome = '';
   const err = formError(), rid = uuid();
-  const f = textField('Nome', { placeholder: tipo === 'RECEITA' ? 'Ex.: Empréstimo recebido' : 'Ex.: Contas da casa', autofocus: true, onInput: (v) => { nome = v; f.setError(''); } });
-  const b = btn('Salvar categoria', { size: 'lg', full: true });
-  b.onclick = async () => {
-    if (!nome.trim()) { f.setError('Dê um nome'); f.input.focus(); return; }
+  const f = textField('Nome da categoria', { placeholder: rec ? 'Ex.: Freelas' : 'Ex.: Contas da casa', autofocus: true, maxlength: 60, enterkeyhint: 'done', onInput: (v) => { nome = v; f.setError(''); } });
+  f.input.dataset.forceFocus = '1';
+  const b = btn('Criar categoria', { size: 'lg', full: true, icon: 'check' });
+  const go = async () => {
+    const t = nome.trim();
+    if (!t) { f.setError('Dê um nome'); f.input.focus(); return; }
+    // Mesmo nome já existe: usa a existente em vez de duplicar
+    const ja = categoriasDe(tipo).find((c) => c.nome.trim().toLocaleLowerCase('pt-BR') === t.toLocaleLowerCase('pt-BR'));
+    if (ja) { await sh.close(); toast('“' + ja.nome + '” já existia e foi escolhida.', { ico: 'tag' }); depois && depois(ja); return; }
     b.disabled = true; b.setAttribute('aria-busy', 'true'); err.show('');
     try {
-      const c = await call('categorias.salvar', { nome: nome.trim(), tipo }, { rid });
-      await loadBoot(); await sh.close(); toast('Categoria criada.', { tone: 'success' }); depois && depois(c);
+      const c = await call('categorias.salvar', { nome: t, tipo }, { rid });
+      await loadBoot(); await sh.close(); toast('Categoria “' + c.nome + '” criada.', { tone: 'success' }); depois && depois(c);
     } catch (e) { err.show(e.message); } finally { b.disabled = false; b.removeAttribute('aria-busy'); }
   };
-  const sh = openSheet({ title: tipo === 'RECEITA' ? 'Nova categoria de receita' : 'Nova categoria de despesa', content: [err, f], footer: b });
+  b.onclick = go;
+  f.input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); go(); } });
+  const sh = openSheet({ title: 'Nova categoria', content: [err, h('p', { class: 'chq-hint' }, icon(rec ? 'in' : 'out'), rec ? 'De receita: aparece nas entradas.' : 'De despesa: aparece nas saídas.'), f], footer: b });
 }
 
 export function categoriaItems(tipo) {
@@ -123,7 +131,8 @@ export function openLancForm({ tipo = 'SAIDA', initial, edit, onSaved } = {}) {
   }
   function itemRow(it, i) {
     const tipoCat = st.tipo === 'ENTRADA' ? 'RECEITA' : 'DESPESA';
-    const cat = pickField('Categoria do item', { value: it.categoria_id, items: () => categoriaItems(tipoCat), placeholder: 'Categoria', display: (v, x) => (x ? x.label : 'Categoria'), onChange: (v) => { it.categoria_id = v; persist(); } });
+    const cat = pickField('Categoria do item', { value: it.categoria_id, items: () => categoriaItems(tipoCat), placeholder: 'Categoria', display: (v, x) => (x ? x.label : 'Categoria'),
+      action: can('editor') ? { label: 'Nova categoria', icon: 'plus', onClick: () => novaCategoria(tipoCat, (c) => { it.categoria_id = c.id; cat.set(c.id); persist(); }) } : null, onChange: (v) => { it.categoria_id = v; persist(); } });
     if (edit) return h('div', { class: 'item-row is-ro' }, h('div', { class: 'item-ro' }, h('span', { class: 'item-name' }, it.descricao), h('span', { class: 'num' }, money(it.valor_total))), cat);
     const d = textField('Item', { value: it.descricao, placeholder: 'Descrição do item', onInput: (v) => { it.descricao = v; persist(); } });
     const v = moneyField('Valor do item', { value: it.valor_total, onChange: (x) => { it.valor_total = x; updTotals(); persist(); } });

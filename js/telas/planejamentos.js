@@ -6,7 +6,7 @@ import { can, catNome } from '../store.js';
 import { openSheet, openMenu, confirmSheet, pick, pickDate } from '../ui/sheet.js';
 import { toast } from '../ui/toast.js';
 import { progress, badge, empty, errorState, skelCards, skelRows, btn, iconBtn, kv, sectionHead, textField, moneyField, dateField, stepper, formError, tip, row, segmented, toggle, field, chip } from '../ui/components.js';
-import { categoriaItems } from './lancForm.js';
+import { categoriaItems, novaCategoria } from './lancForm.js';
 
 let filtro = 'vigentes';
 
@@ -297,7 +297,8 @@ function planForm(edit, { latest = true } = {}) {
             h('div', { class: 'field' }, h('div', { class: 'field-top' }, h('span', { class: 'field-label' }, 'Conta'), tip(meta ? 'Quanto de cada receita desta categoria entra nesta meta.' : 'Quanto de cada gasto desta categoria entra neste planejamento.')),
               stepper({ value: c.percentual_execucao, min: 5, max: 100, step: 5, label: 'Percentual', format: (v) => v + '%', onChange: (v) => { c.percentual_execucao = v; } })))))),
         btn('Adicionar categoria', { kind: 'ghost', icon: 'plus', onClick: async () => {
-          const v = await pick({ title: meta ? 'Categoria de receita' : 'Categoria de despesa', items: categoriaItems(meta ? 'RECEITA' : 'DESPESA').filter((x) => !st.categorias.some((c) => c.categoria_id === x.value)) });
+          const v = await pick({ title: meta ? 'Categoria de receita' : 'Categoria de despesa', items: categoriaItems(meta ? 'RECEITA' : 'DESPESA').filter((x) => !st.categorias.some((c) => c.categoria_id === x.value)),
+            action: can('editor') ? { label: 'Nova categoria', icon: 'plus', onClick: () => novaCategoria(meta ? 'RECEITA' : 'DESPESA', (c) => { if (!st.categorias.some((x) => x.categoria_id === c.id)) { st.categorias.push({ categoria_id: c.id, valor_limite: 0, percentual_execucao: 100 }); drawCats(); } }) } : null });
           if (v) { st.categorias.push({ categoria_id: v, valor_limite: 0, percentual_execucao: 100 }); drawCats(); }
         } }));
     };

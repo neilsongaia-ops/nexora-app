@@ -3,7 +3,7 @@ import { h, money, dmy, uuid, emit, num, embalagem } from '../util.js';
 import { icon } from '../icons.js';
 import { DEMO, call } from '../api.js';
 import { store, can, recursosAtivos } from '../store.js';
-import { pick } from '../ui/sheet.js';
+import { pick, openSheet } from '../ui/sheet.js';
 import { toast, successBurst } from '../ui/toast.js';
 import { scanCode, pdfText, pickFile } from '../ui/media.js';
 import { card, row, badge, empty, errorState, btn, textField, pickField, stepper, formError, sectionHead, chip, kv, tip } from '../ui/components.js';
@@ -11,6 +11,18 @@ import { recursoItems } from './lancForm.js';
 
 // No app Android (Capacitor) o celular consulta o portal da SEFAZ por um WebView do próprio aparelho: o servidor do Apps Script é bloqueado, o celular não.
 // Com a interface carregada de um site remoto o Capacitor injeta um objeto enxuto (sem registerPlugin): tenta os 3 caminhos possíveis.
+/** Depois de importar: o que ficou de fora (ex.: preço de item vendido em KG num produto medido em UN). Não é erro: o lançamento foi salvo. */
+function avisosImportacao(avisos, verLanc) {
+  const cap = (t) => { const x = String(t || '').trim(); return x.charAt(0).toUpperCase() + x.slice(1); };
+  const um = avisos.length === 1;
+  const s = openSheet({ title: 'Nota importada', content: [
+    h('div', { class: 'warn-item is-ok' }, icon('check'), h('span', {}, 'O lançamento e os produtos foram salvos.')),
+    h('p', { class: 'sheet-lead' }, um ? 'Só o preço deste item não entrou no histórico de preços:' : 'Só o preço destes ' + avisos.length + ' itens não entrou no histórico de preços:'),
+    h('ul', { class: 'warn-list' }, avisos.map((a) => h('li', { class: 'warn-item' }, icon('tag'), h('span', {}, cap(a))))),
+    h('p', { class: 'sheet-note' }, 'Isso acontece quando a nota vende numa unidade (por exemplo, quilo) e o produto está cadastrado em outra (por exemplo, unidade). Se for o caso, ajuste a unidade no produto: as próximas notas registram o preço.')],
+    footer: h('div', { class: 'btn-row' }, btn('Ver lançamento', { kind: 'secondary', onClick: async () => { await s.close(); verLanc(); } }), btn('Entendi', { onClick: () => s.close() })) });
+}
+
 const leitorNativo = () => {
   const C = window.Capacitor;
   if (!(C && C.isNativePlatform && C.isNativePlatform() && C.isPluginAvailable && C.isPluginAvailable('NfceReader'))) return null;
@@ -133,8 +145,9 @@ export default async function nota(ctx) {
         if (res.loja_id) p.loja_id = res.loja_id; else p.loja = { nome: titulo(res.emitente || 'Loja'), cnpj: res.cnpj || undefined, cidade: res.endereco && res.endereco.cidade, uf: res.endereco && res.endereco.uf };
         const r = await call('nfce.importar', p, { rid: uuid() });
         await successBurst(root, 'Nota importada');
-        if (r.avisos && r.avisos.length) toast('Alguns preços não foram registrados: ' + r.avisos.join(' '), { tone: 'danger', duration: 9000 });
-        toast('Nota importada: lançamento, produtos e preços.', { tone: 'success', action: { label: 'Ver lançamento', onClick: async () => (await import('./lancAcoes.js')).openLancDetail(r.lancamento.id) } });
+        const verLanc = async () => (await import('./lancAcoes.js')).openLancDetail(r.lancamento.id);
+        if (r.avisos && r.avisos.length) avisosImportacao(r.avisos, verLanc);
+        else toast('Nota importada: lançamento, produtos e preços.', { tone: 'success', action: { label: 'Ver lançamento', onClick: verLanc } });
         entrada = texto = pdfNome = ''; res = null; emit('dados');
       } catch (x) { err.show(x.message); b.disabled = false; } finally { b.removeAttribute('aria-busy'); }
     };

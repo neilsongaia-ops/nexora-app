@@ -66,7 +66,11 @@ export default async function inicio(ctx) {
     onde.replaceChildren(...d.onde_esta.map((r) => h('a', { class: 'acct', href: '#/contas/' + r.recurso_id, dataset: { id: r.recurso_id } }, h('span', { class: 'acct-k' }, icon(r.tipo === 'CARTEIRA' ? 'coin' : 'wallet'), h('span', { class: 'truncate' }, r.nome)), h('span', { class: 'acct-v num money' + (r.saldo < 0 ? ' tone-out' : '') }, money(r.saldo)))),
       ...d.cartoes.map((k) => h('a', { class: 'acct acct--card', href: '#/contas/' + k.recurso_id }, h('span', { class: 'acct-k' }, icon('card'), h('span', { class: 'truncate' }, k.nome)),
         h('span', { class: 'acct-v num money' }, money(k.comprometido)), k.limite ? h('span', { class: 'acct-bar', style: { '--p': String(Math.min(1, k.comprometido / k.limite)) } }) : h('span', { class: 'acct-sub' }, 'Sem limite definido'))));
-    load('relatorios.saldos', {}).then((s) => (s.contas || []).forEach((c) => { const el = onde.querySelector('[data-id="' + CSS.escape(c.id) + '"]'); if (el) el.append(...ondeExtra(c)); })).catch(() => {});
+    load('relatorios.saldos', {}).then((s) => {
+      (s.contas || []).forEach((c) => { const el = onde.querySelector('[data-id="' + CSS.escape(c.id) + '"]'); if (el) el.append(...ondeExtra(c)); });
+      const pp = (s.cartoes || []).reduce((a, k) => a + (Number(k.parcelas_planejadas) || 0), 0), t = tiles.children[3];
+      if (pp > 0.009 && t) t.append(h('span', { class: 'tile-sub num' }, 'Já desconta ' + money(pp) + ' em parcelas planejadas'));
+    }).catch(() => {});
     return [h('span', { class: 'hero-k' }, 'Quanto tenho'), v, h('span', { class: 'hero-sub' }, 'Patrimônio líquido ', h('strong', { class: 'num money' }, money(d.patrimonio_liquido)), tip('Tudo o que você tem menos o que deve nos cartões.'))];
   });
 

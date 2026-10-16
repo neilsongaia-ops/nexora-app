@@ -268,13 +268,15 @@ async function lojas(ctx, body) {
   const list = h('div', { class: 'list' }, skelRows(4));
   body.append(tools, list);
   load('deslocamento.ler', {}).then((d) => { casa = (d.enderecos || []).find((e) => e.padrao && e.status !== 'INATIVO') || null; if (casa) drawTools(); }).catch(() => {});
-  const drawTools = () => tools.replaceChildren(chip('Todas', { selected: modo === 'todas', onClick: () => { modo = 'todas'; draw(); } }), casa ? chip('Perto de ' + casa.nome, { selected: modo === 'casa', ic: 'home', onClick: () => { modo = 'casa'; draw(); } }) : '', can('editor') ? chip('Da comunidade', { ic: 'users', onClick: () => catalogoLojas(draw) }) : '', chip('Perto de mim', { selected: modo === 'perto', ic: 'pin', onClick: async () => { try { pos ||= await geolocate(); modo = 'perto'; draw(); } catch (e) { toast(e.message, { tone: 'danger' }); } } }));
+  // Filtros primeiro; depois do separador, a ação que abre o catálogo da comunidade (não é filtro, não fica marcada)
+  const drawTools = () => tools.replaceChildren(chip('Todas', { selected: modo === 'todas', onClick: () => { modo = 'todas'; draw(); } }), casa ? chip('Perto de ' + casa.nome, { selected: modo === 'casa', ic: 'home', onClick: () => { modo = 'casa'; draw(); } }) : '', chip('Perto de mim', { selected: modo === 'perto', ic: 'pin', onClick: async () => { try { pos ||= await geolocate(); modo = 'perto'; draw(); } catch (e) { toast(e.message, { tone: 'danger' }); } } }),
+    can('editor') ? h('span', { class: 'chip-sep', 'aria-hidden': 'true' }) : '', can('editor') ? chip('Da comunidade', { ic: 'users', onClick: () => catalogoLojas(draw) }) : '');
   const draw = async () => {
     drawTools(); list.replaceChildren(skelRows(4));
     try {
       const ref = modo === 'casa' && casa ? casa : modo === 'perto' ? pos : null;
       const ls = ref ? await call('lojas.proximas', { latitude: ref.latitude, longitude: ref.longitude, raio_km: 15 }) : await load('lojas.listar', {});
-      if (!ls.length) { list.replaceChildren(empty({ ic: 'store', title: ref ? 'Nenhuma loja por perto' : 'Nenhuma loja cadastrada' })); return; }
+      if (!ls.length) { list.replaceChildren(empty({ ic: 'store', title: ref ? 'Nenhuma loja a até 15 km' : 'Nenhuma loja cadastrada', action: can('editor') ? h('div', { class: 'btn-inline' }, btn('Cadastrar loja', { icon: 'plus', onClick: () => lojaForm(null, draw) }), btn('Buscar na comunidade', { kind: 'secondary', icon: 'users', onClick: () => catalogoLojas(draw) })) : null })); return; }
       list.replaceChildren(...ls.map((l) => row({
         lead: h('span', { class: 'tipo-ico' }, icon('store')), title: l.nome,
         sub: [l.cidade && l.uf ? `${l.cidade}/${l.uf}` : l.cidade, l.cnpj ? 'CNPJ ' + l.cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5') : null].filter(Boolean).join(' · '),
@@ -297,43 +299,69 @@ const cepMaskL = (v) => { const d = String(v || '').replace(/\D/g, '').slice(0, 
 
 export function lojaForm(edit, after) {
   const st = { nome: '', cnpj: '', cidade: '', uf: '', cep: '', logradouro: '', numero: '', bairro: '', latitude: null, longitude: null, loc_origem: '', ...(edit || {}) };
-  st.cnpj = st.cnpj || ''; st.cep = cepMaskL(st.cep); st.userCoord = false;
+  ['cnpj', 'cidade', 'uf', 'logradouro', 'numero', 'bairro'].forEach((k) => { st[k] = st[k] || ''; });
+  st.cep = cepMaskL(st.cep); st.userCoord = false;
   const err = formError(), rid = uuid();
-  const fn = textField('Nome', { value: st.nome, autofocus: true, onInput: (v) => { st.nome = v; fn.setError(''); } });
+  const fn = textField('Nome da loja', { value: st.nome, placeholder: 'Ex.: Mercado do bairro', autofocus: !edit, onInput: (v) => { st.nome = v; fn.setError(''); } });
   const info = h('div', { class: 'loc-cep', 'aria-live': 'polite' });
-  const geoTxt = h('span', { class: 'set-row-sub num' });
-  const drawGeo = () => { geoTxt.textContent = st.latitude != null ? (LOC_TXT[st.loc_origem] ? LOC_TXT[st.loc_origem] + ' · ' : '') + coordTxt(st.latitude, st.longitude) : 'Sem localização: informe o CNPJ ou o endereço, ou marque no mapa'; };
-  const fcnpj = textField('CNPJ', { value: cnpjMask(st.cnpj), inputmode: 'numeric', placeholder: 'Opcional (completa os dados sozinho)', maxlength: 18, onInput: (v) => { st.cnpj = v.replace(/\D/g, '').slice(0, 14); fcnpj.input.value = cnpjMask(st.cnpj); if (st.cnpj.length === 14 && !(edit && edit.cnpj)) consultarCnpj(); else if (st.cnpj.length < 14) info.replaceChildren(); } });
-  const fcep = textField('CEP', { value: st.cep, inputmode: 'numeric', placeholder: '00000-000', maxlength: 9, onInput: (v) => { st.cep = cepMaskL(v); fcep.input.value = st.cep; if (st.cep.length === 9 && !st.logradouro) consultarCep(); } });
+  let seq = 0;
+  const fcnpj = textField('CNPJ', { value: cnpjMask(st.cnpj), inputmode: 'numeric', placeholder: 'Opcional', maxlength: 18, tipText: 'Com o CNPJ, o nome, o endereço e a localização oficiais vêm sozinhos.',
+    onInput: (v) => { st.cnpj = v.replace(/\D/g, '').slice(0, 14); fcnpj.input.value = cnpjMask(st.cnpj); if (st.cnpj.length === 14 && !(edit && edit.cnpj)) consultarCnpj(); else if (st.cnpj.length < 14) { seq++; info.replaceChildren(); } } });
+  const cepErr = h('span', { class: 'field-err', role: 'alert' });
+  const fcep = textField('CEP', { value: st.cep, inputmode: 'numeric', placeholder: '00000-000', autocomplete: 'postal-code', maxlength: 9, onInput: (v) => { st.cep = cepMaskL(v); fcep.input.value = st.cep; cepErr.textContent = ''; if (st.cep.length === 9 && !st.logradouro) consultarCep(); } });
   const frua = textField('Rua', { value: st.logradouro, onInput: (v) => { st.logradouro = v; } });
-  const fnum = textField('Número', { value: st.numero, onInput: (v) => { st.numero = v; } });
+  const fnum = textField('Número', { value: st.numero, placeholder: 'S/N se não tiver', onInput: (v) => { st.numero = v; } });
   const fbai = textField('Bairro', { value: st.bairro, onInput: (v) => { st.bairro = v; } });
-  const fcid = textField('Cidade', { value: st.cidade || '', onInput: (v) => { st.cidade = v; } });
-  const fuf = textField('UF', { value: st.uf || '', maxlength: 2, onInput: (v) => { st.uf = v.toUpperCase(); } });
+  const fcid = textField('Cidade', { value: st.cidade, onInput: (v) => { st.cidade = v; } });
+  const fuf = textField('UF', { value: st.uf, maxlength: 2, placeholder: 'PA', onInput: (v) => { st.uf = v.toUpperCase(); fuf.input.value = st.uf; } });
   const poe = (campo, f, v) => { if (v && !String(st[campo] || '').trim()) { st[campo] = v; f.input.value = v; } };
+  const nota = (cls, ic, txt, ...extra) => h('div', { class: 'warn-item' + (cls ? ' ' + cls : ''), role: cls === 'is-danger' ? 'alert' : null }, icon(ic), h('div', { class: 'warn-body' }, h('span', {}, txt), ...extra));
+  // Endereço: recolhido num resumo quando já está completo (veio do CNPJ ou é edição); "Editar" abre os campos
+  const composto = () => [st.logradouro, st.numero, st.bairro, st.cidade && st.uf ? st.cidade + '/' + st.uf : st.cidade, st.cep.length === 9 ? 'CEP ' + st.cep : ''].map((x) => String(x || '').trim()).filter(Boolean).join(', ');
+  const resumo = h('p', { class: 'end-resumo' });
+  const corpo = h('div', { class: 'form-sec-body' }, h('div', { class: 'grid-2' }, fcep, fnum), cepErr, frua, fbai, h('div', { class: 'grid-2 grid-uf' }, fcid, fuf));
+  const bEnd = btn('Editar', { kind: 'ghost', size: 'sm', icon: 'edit', aria: 'Editar endereço', onClick: () => drawEnd(true, true) });
+  const drawEnd = (aberto, foco) => { corpo.hidden = !aberto; bEnd.hidden = aberto; resumo.hidden = aberto; resumo.textContent = composto(); if (foco) fcep.input.focus(); };
   async function consultarCnpj() {
-    info.replaceChildren(h('span', { class: 'loc-sub' }, 'Buscando os dados oficiais…'));
+    const n = ++seq;
+    info.replaceChildren(h('span', { class: 'loc-sub', role: 'status' }, 'Buscando os dados oficiais…'));
     try {
       const r = await call('cnpj.consultar', { cnpj: st.cnpj });
+      if (n !== seq) return;
       poe('nome', fn, r.nome); poe('cidade', fcid, r.cidade); poe('uf', fuf, r.uf); poe('cep', fcep, cepMaskL(r.cep)); poe('logradouro', frua, r.logradouro); poe('numero', fnum, r.numero); poe('bairro', fbai, r.bairro);
       if (st.latitude == null && r.latitude != null) { st.latitude = r.latitude; st.longitude = r.longitude; st.loc_origem = 'oficial'; drawGeo(); }
-      const out = [h('span', { class: 'loc-k' }, r.razao_social || r.nome), h('span', { class: 'loc-sub' }, r.fonte === 'catalogo' ? 'Do catálogo da comunidade' : 'Dados oficiais (Receita)' + (r.precisao === 'cep' ? ' · localização aproximada pelo CEP' : ''))];
-      if (r.ativa === false) out.push(h('div', { class: 'field-err', role: 'alert' }, 'Situação cadastral na Receita: ' + String(r.situacao || '').toLowerCase() + '.'));
-      if (r.loja_id && !(edit && edit.id === r.loja_id)) out.push(h('div', { class: 'field-err', role: 'alert' }, 'Você já tem esta loja cadastrada.'));
-      info.replaceChildren(...out);
-    } catch (e) { info.replaceChildren(h('span', { class: 'field-err', role: 'alert' }, e.message)); }
+      const outs = [h('div', { class: 'loc-found' }, icon(r.fonte === 'catalogo' ? 'users' : 'verified'), h('div', { class: 'loc-txt' },
+        h('span', { class: 'loc-k' }, r.razao_social || r.nome),
+        h('span', { class: 'loc-sub' }, r.fonte === 'catalogo' ? 'Do catálogo da comunidade' : 'Dados oficiais (Receita)'),
+        r.precisao === 'cep' ? h('span', { class: 'loc-sub' }, 'Localização aproximada pelo CEP') : null))];
+      if (r.ativa === false) outs.push(nota('', 'alert', 'Situação cadastral na Receita: ' + String(r.situacao || 'não ativa').toLowerCase() + '. Confira se a loja ainda funciona.'));
+      if (r.loja_id && !(edit && edit.id === r.loja_id)) outs.push(nota('', 'store', 'Você já tem esta loja cadastrada.'));
+      info.replaceChildren(...outs);
+      if (st.logradouro.trim() && st.cidade.trim()) drawEnd(false);
+    } catch (e) { if (n === seq) info.replaceChildren(nota('is-danger', 'alert', e.message, h('div', { class: 'btn-inline' }, btn('Tentar de novo', { kind: 'secondary', size: 'sm', onClick: consultarCnpj })))); }
   }
   async function consultarCep() {
     try {
       const r = await call('cep.consultar', { cep: st.cep.replace(/\D/g, ''), numero: st.numero || undefined });
       poe('logradouro', frua, r.logradouro); poe('bairro', fbai, r.bairro); poe('cidade', fcid, r.cidade); poe('uf', fuf, r.uf);
-    } catch (e) { toast(e.message, { tone: 'danger' }); }
+    } catch (e) { cepErr.textContent = e.message; }
   }
+  const locIco = h('span', { class: 'tipo-ico' }), locTxt = h('span', { class: 'loc-txt' });
+  const drawGeo = () => {
+    const ok = st.latitude != null;
+    locIco.className = 'tipo-ico' + (ok ? ' tone-in' : '');
+    locIco.replaceChildren(icon(ok ? 'check' : 'pin'));
+    locTxt.replaceChildren(h('span', { class: 'loc-k' }, ok ? (LOC_TXT[st.loc_origem] || 'Local marcado') : 'Sem localização'),
+      h('span', { class: 'loc-sub' + (ok ? ' num' : '') }, ok ? coordTxt(st.latitude, st.longitude) : 'Sem local, a loja não aparece em “Perto de mim”. Informe o CNPJ ou marque abaixo.'));
+  };
   drawGeo();
   const setUser = (p) => { st.latitude = p.latitude; st.longitude = p.longitude; st.userCoord = true; st.loc_origem = 'informada'; drawGeo(); };
+  const bGps = btn('Onde estou', { kind: 'secondary', icon: 'locate', size: 'sm', onClick: async (e) => { const bb = e.currentTarget; bb.disabled = true; bb.setAttribute('aria-busy', 'true'); try { setUser(await geolocate()); } catch (x) { toast(x.message, { tone: 'danger' }); } finally { bb.disabled = false; bb.removeAttribute('aria-busy'); } } });
+  const bMapa = btn('No mapa', { kind: 'secondary', icon: 'map', size: 'sm', onClick: async () => { const r = await escolherNoMapa({ latitude: st.latitude, longitude: st.longitude, busca: [st.logradouro, st.numero, st.cidade || st.nome].filter(Boolean).join(', ') }); if (r) setUser(r); } });
+  drawEnd(!(st.logradouro.trim() && st.cidade.trim()));
   const b = btn(edit ? 'Salvar' : 'Cadastrar loja', { size: 'lg', full: true });
   b.onclick = async () => {
-    if (!st.nome.trim()) { fn.setError('Dê um nome'); return; }
+    if (!st.nome.trim()) { fn.setError('Dê um nome'); fn.input.focus(); return; }
     b.disabled = true; b.setAttribute('aria-busy', 'true'); err.show('');
     try {
       const r = await call('lojas.salvar', { ...(edit ? { id: edit.id } : {}), nome: st.nome.trim(), cnpj: st.cnpj || undefined, cidade: st.cidade || undefined, uf: st.uf || undefined,
@@ -343,39 +371,45 @@ export function lojaForm(edit, after) {
     } catch (e) { err.show(e.message); } finally { b.disabled = false; b.removeAttribute('aria-busy'); }
   };
   const s = openSheet({ title: edit ? 'Editar loja' : 'Nova loja', footer: b, content: [err, fcnpj, info, fn,
-    h('div', { class: 'grid-2' }, fcep, fnum), frua, fbai,
-    h('div', { class: 'grid-2' }, fcid, fuf),
-    h('div', { class: 'set-row' }, h('div', { class: 'set-row-k' }, h('span', { class: 'field-label' }, 'Localização'), geoTxt),
-      h('div', { class: 'btn-inline' },
-        btn('Onde estou', { kind: 'secondary', icon: 'locate', size: 'sm', onClick: async (e) => { const bb = e.currentTarget; bb.disabled = true; try { setUser(await geolocate()); } catch (x) { toast(x.message, { tone: 'danger' }); } finally { bb.disabled = false; } } }),
-        btn('No mapa', { kind: 'secondary', icon: 'map', size: 'sm', onClick: async () => { const r = await escolherNoMapa({ latitude: st.latitude, longitude: st.longitude, busca: [st.logradouro, st.numero, st.cidade || st.nome].filter(Boolean).join(', ') }); if (r) setUser(r); } })))] });
+    h('div', { class: 'form-sec' }, h('div', { class: 'form-sec-h' }, icon('pin'), h('span', { class: 'grow' }, 'Endereço'), bEnd), resumo, corpo),
+    h('div', { class: 'form-sec' }, h('div', { class: 'form-sec-h' }, icon('map'), 'Localização'),
+      h('div', { class: 'loc-box' }, h('div', { class: 'loc-now' }, locIco, locTxt), h('div', { class: 'loc-acts loc-acts--2' }, bGps, bMapa)))] });
 }
 
 /** Diretório da comunidade: lojas por CNPJ com endereço e localização oficiais. */
 function catalogoLojas(depois) {
   let texto = '', pos = null, seq = 0;
-  const lista = h('div', { class: 'list' }, skelRows(3));
-  const busca = textField('Buscar loja', { placeholder: 'Nome, cidade ou CNPJ', onInput: debounce((v) => { texto = v.trim(); carregar(); }, 350) });
-  const perto = btn('Perto de mim', { kind: 'secondary', size: 'sm', icon: 'pin', onClick: async (e) => { const bb = e.currentTarget; bb.disabled = true; try { pos = pos || await geolocate(); carregar(); } catch (x) { toast(x.message, { tone: 'danger' }); } finally { bb.disabled = false; } } });
+  const lista = h('div', { class: 'list' });
+  const conta = h('p', { class: 'loc-sub', 'aria-live': 'polite' });
+  const busca = searchBox({ placeholder: 'Nome, cidade ou CNPJ', onSearch: (v) => { texto = (v || '').trim(); carregar(); } });
+  const chips = h('div', { class: 'chip-row' });
+  const drawChips = () => chips.replaceChildren(chip('Perto de mim', { ic: 'pin', selected: !!pos, onClick: async () => {
+    if (pos) { pos = null; drawChips(); carregar(); return; }
+    try { pos = await geolocate(); drawChips(); carregar(); } catch (x) { toast(x.message, { tone: 'danger' }); }
+  } }));
   const adicionar = async (it, bb) => {
-    bb.disabled = true;
-    try { await call('lojas.salvar', { nome: it.nome, cnpj: it.cnpj }, { rid: uuid() }); toast('Loja adicionada.', { tone: 'success' }); emit('dados'); depois && depois(); carregar(); }
-    catch (x) { toast(x.message, { tone: 'danger' }); bb.disabled = false; }
+    bb.disabled = true; bb.setAttribute('aria-busy', 'true');
+    try { await call('lojas.salvar', { nome: it.nome, cnpj: it.cnpj }, { rid: uuid() }); toast('Loja adicionada: ' + it.nome + '.', { tone: 'success' }); emit('dados'); depois && depois(); carregar(); }
+    catch (x) { toast(x.message, { tone: 'danger' }); bb.disabled = false; bb.removeAttribute('aria-busy'); }
   };
   async function carregar() {
-    const n = ++seq; lista.replaceChildren(skelRows(3));
+    const n = ++seq; lista.replaceChildren(skelRows(3)); conta.textContent = '';
     try {
       const r = await call('lojas.catalogo', { texto: texto || undefined, ...(pos ? { latitude: pos.latitude, longitude: pos.longitude } : {}) });
       if (n !== seq) return;
+      const total = r.total != null ? r.total : r.itens.length;
+      conta.textContent = !r.itens.length ? '' : (total > r.itens.length ? 'Mostrando ' + r.itens.length + ' de ' + total : total === 1 ? '1 loja' : total + ' lojas') + (pos ? ', das mais perto para as mais longe' : '');
       lista.replaceChildren(...(r.itens.length ? r.itens.map((it) => row({
         lead: h('span', { class: 'tipo-ico' }, icon('store')), title: it.nome,
-        sub: [it.endereco, it.distancia_km != null ? String(it.distancia_km).replace('.', ',') + ' km' : null].filter(Boolean).join(' · '),
-        badges: [it.loc_origem === 'oficial' || it.loc_origem === 'confirmada' ? badge(LOC_TXT[it.loc_origem], 'in', 'check') : it.loc_origem ? badge(LOC_TXT[it.loc_origem] || 'Sem confirmação', 'warn', 'pin') : badge('Sem localização', 'warn', 'pin')],
-        trail: it.ja_tenho ? badge('Já adicionada', 'neutral', 'check') : btn('Adicionar', { kind: 'secondary', size: 'sm', onClick: (e) => { e.stopPropagation(); adicionar(it, e.currentTarget); } }),
-      })) : [empty({ ic: 'store', title: 'Nenhuma loja encontrada na comunidade' })]));
+        sub: [it.endereco || [it.cidade, it.uf].filter(Boolean).join('/'), it.distancia_km != null ? String(it.distancia_km).replace('.', ',') + ' km' : null].filter(Boolean).join(' · '),
+        badges: [it.loc_origem === 'oficial' || it.loc_origem === 'confirmada' ? badge(LOC_TXT[it.loc_origem], 'in', 'check') : it.loc_origem ? badge(LOC_TXT[it.loc_origem] || 'Sem confirmação', 'muted', 'pin') : badge('Sem localização', 'warn', 'pin')],
+        trail: it.ja_tenho ? badge('Já adicionada', 'muted', 'check') : btn('Adicionar', { kind: 'secondary', size: 'sm', aria: 'Adicionar ' + it.nome, onClick: (e) => { e.stopPropagation(); adicionar(it, e.currentTarget); } }),
+      })) : [empty({ ic: 'store', title: texto || pos ? 'Nenhuma loja encontrada na comunidade' : 'Ainda não há lojas na comunidade',
+        action: btn('Cadastrar loja', { kind: 'secondary', icon: 'plus', onClick: async () => { await s.close(); lojaForm(null, depois); } }) })]));
     } catch (e) { if (n === seq) lista.replaceChildren(errorState(e.message, carregar)); }
   }
-  openSheet({ title: 'Lojas da comunidade', content: [busca, h('div', { class: 'btn-inline' }, perto), lista] });
+  drawChips();
+  const s = openSheet({ title: 'Lojas da comunidade', size: 'tall', content: [h('p', { class: 'sheet-note' }, 'Lojas que outras pessoas já cadastraram pelo CNPJ. Ao adicionar, o endereço e a localização vêm junto.'), busca, chips, conta, lista] });
   carregar();
 }
 

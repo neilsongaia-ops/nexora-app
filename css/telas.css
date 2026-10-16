@@ -563,3 +563,24 @@ a.tile:active { transform: var(--press); }
 }
 .loc-cep { display: flex; flex-direction: column; gap: 4px; margin: -4px 0 12px; }
 .loc-cep:empty { display: none; }
+
+/* Locais, lojas, avisos da nota e limite reservado por parcelas planejadas */
+.chip-row--scroll > * { flex: none; }
+.warn-list { list-style: none; margin: 0; padding: 0; }
+.warn-body { display: flex; flex-direction: column; gap: var(--s2); min-width: 0; }
+.warn-item.is-ok { background: var(--surface-2); }
+.warn-item.is-ok .ico { color: var(--in); }
+.warn-item > span, .warn-body > span { overflow-wrap: anywhere; text-wrap: pretty; }
+.loc-found { display: flex; gap: var(--s3); align-items: flex-start; padding: var(--s3); border-radius: var(--r-md); background: var(--surface-2); min-width: 0; }
+.loc-found > .ico { color: var(--in); flex: none; }
+.loc-k, .loc-sub { overflow-wrap: anywhere; }
+.form-sec .loc-cep { margin: 0; }
+.form-sec-h .grow { flex: 1; min-width: 0; }
+.loc-acts--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.end-resumo { margin: 0; color: var(--ink-2); font-size: var(--t-sm); overflow-wrap: anywhere; text-wrap: pretty; }
+.grid-uf { grid-template-columns: minmax(0, 1fr) 5.5rem; }
+.sheet-lead { margin: 0; color: var(--ink-2); text-wrap: pretty; }
+.sheet-note { margin: 0; font-size: var(--t-sm); color: var(--ink-3); text-wrap: pretty; }
+.ccard-res, .tile-sub { display: block; font-size: var(--t-xs); color: var(--ink-3); }
+.kv.is-sub .kv-k { padding-left: var(--s3); color: var(--ink-3); }
+.desl .row, .desl .list { min-width: 0; }

@@ -51,6 +51,7 @@ function cartaoCard(k) {
       k.limite ? h('div', { class: 'ccard-limit' }, h('div', { class: 'meter-line' + (k.limite_comprometido > k.limite ? ' is-over' : k.limite_comprometido / k.limite > 0.85 ? ' is-near' : ''), style: { '--p': String(Math.min(1, k.limite_comprometido / k.limite)) } }),
         h('div', { class: 'ccard-nums' }, h('span', {}, h('span', { class: 'muted' }, 'Disponível '), h('strong', { class: 'num' }, money(k.limite_disponivel))), h('span', { class: 'muted num' }, 'de ' + money(k.limite))))
         : h('div', { class: 'ccard-nums' }, badge('Sem limite definido', 'neutral'), h('span', { class: 'num' }, money(k.limite_comprometido) + ' usados')),
+      k.parcelas_planejadas > 0.009 ? h('span', { class: 'ccard-res num' }, (k.limite ? 'Já desconta ' : 'Inclui ') + money(k.parcelas_planejadas) + ' em parcelas planejadas') : null,
       h('div', { class: 'ccard-fat' }, venc ? badge('Fatura vencida · ' + money(venc.valor_em_aberto), 'out', 'alert') : prox ? badge(FATURA[prox.status].label + ' · vence ' + relDate(prox.data_vencimento), FATURA[prox.status].tone, 'calendar') : k.fatura_aberta && k.fatura_aberta.id ? h('span', { class: 'muted' }, 'Fatura aberta ', h('strong', { class: 'num' }, money(k.fatura_aberta.valor_total))) : null)));
 }
 
@@ -103,6 +104,7 @@ async function detalheCartao(ctx, r) {
     top.replaceChildren(h('div', { class: 'cc-gauge' }, gauge({ limite: s.limite, usado: s.limite_comprometido, label: 'Limite usado' }),
       h('div', { class: 'cc-gauge-c' }, s.limite ? [h('span', { class: 'cc-g-k' }, 'Disponível'), h('span', { class: 'cc-g-v num' }, money(s.limite_disponivel)), h('span', { class: 'cc-g-s num' }, Math.round(pctU * 100) + '% do limite usado')] : [h('span', { class: 'cc-g-k' }, 'Sem limite definido'), h('span', { class: 'cc-g-v num' }, money(s.limite_comprometido)), h('span', { class: 'cc-g-s' }, 'comprometidos')])),
       h('div', { class: 'kv-list' }, kv('Limite contratado', money(s.limite)), kv(h('span', { class: 'kv-tip' }, 'Comprometido', tip('Compras parceladas comprometem o limite pelo total; ele volta conforme as faturas são pagas.')), money(s.limite_comprometido)),
+        s.parcelas_planejadas > 0.009 ? kv(h('span', { class: 'kv-tip' }, 'Parcelas planejadas', tip('Parcelas de compras parceladas que ainda estão planejadas. O banco já separa esse valor no limite, por isso ele entra no comprometido.')), money(s.parcelas_planejadas), 'is-sub') : null,
         s.credito_a_favor ? kv('Crédito a favor', money(s.credito_a_favor), 'tone-in') : null, kv('Fecha dia', String(r.dia_fechamento)), kv('Vence dia', String(r.dia_vencimento)),
         r.recurso_pagamento_id ? kv('Paga com', (store.recs.get(r.recurso_pagamento_id) || {}).nome || '') : null));
     drawFat();
